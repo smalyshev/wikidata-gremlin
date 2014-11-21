@@ -23,12 +23,12 @@ class ConsoleInit {
    */
   private void graph() {
     // First lets just see if we're already in a graph scope like on the web console.
-    if (script.g) {
-      println "Initialized for Rexster Web Console"
-      return
-    }
     // Try initializing like we're in rexster command line console.
     try {
+	  if (script.g) {
+		println "Initialized for Rexster Web Console"
+		return
+	  }
       script.g = rexster.getGraph('graph')
       println "Initialized for Rexster Console"
     } catch (MissingPropertyException e) {
