@@ -1,6 +1,7 @@
 package org.wikidata.gremlin
 
 import com.tinkerpop.blueprints.Graph
+import com.tinkerpop.blueprints.Vertex
 
 // Apache 2 Licensed
 
@@ -31,8 +32,18 @@ class Schema {
       changed = true
       def specialValueNode = mgmt.makePropertyKey('specialValueNode').dataType(String.class).make()
       mgmt.buildIndex('by_specialValueNode',Vertex.class).addKey(specialValueNode).unique().buildCompositeIndex()
+		mgmt.makePropertyKey('stub').dataType(Boolean.class).make()
+		mgmt.makePropertyKey('type').dataType(String.class).make()
+		mgmt.makePropertyKey('datatype').dataType(String.class).make()
     }
-    if (changed) {
+/*    if (!mgmt.containsGraphIndex('by_type_and_label')) {
+      println "Adding key and index for by_type_and_label"
+      changed = true
+      def label = mgmt.makePropertyKey('labelEn').dataType(String.class).make()
+      def type = mgmt.makePropertyKey('type').dataType(String.class).make()
+      mgmt.buildIndex('by_type_and_label',Vertex.class).addKey(type).addKey(label).buildCompositeIndex()
+    }
+*/    if (changed) {
       mgmt.commit()
     }
   }

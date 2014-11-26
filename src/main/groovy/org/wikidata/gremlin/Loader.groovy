@@ -8,9 +8,11 @@ import com.tinkerpop.pipes.Pipe
 
 class Loader {
   final Graph g
+  boolean skip_props
 
-  Loader(Graph g) {
+  Loader(Graph g, skip_props = true) {
     this.g = g
+	this.skip_props = skip_props
   }
 
   /**
@@ -37,18 +39,46 @@ class Loader {
    */
   private void refreshWikidataItem(id) {
     def item = fetchEntity(id)
-    def v = getOrCreateVertexForItem(id)
-    updateLabels(v, item)
-    updateClaims(v, item)
-    if (g.getFeatures().supportsTransactions) {
-      g.commit()
-    }
+	loadFromItem(item)
+  }
+  
+  public void loadFromItem(item) {
+	  def id = item['id']
+	  def isProperty = (id[0] == 'P')
+	  if(isProperty && skip_props) {
+		  return
+	  }
+      def v = getOrCreateVertexForItem(id)
+	  if(isProperty) {
+    	  checkProperty(item)
+      }
+      updateLabels(v, item)
+      updateClaims(v, item)
+      v['type'] = item['type']
+	  if(item['datatype']) {
+		  v['datatype'] = item['datatype']
+	  }
+	  
+      if (g.getFeatures().supportsTransactions) {
+        g.commit()
+      }
   }
 
   private def fetchEntity(id) {
+	  println "Fetching ${id} from Wikidata"
     def text = new URL("http://www.wikidata.org/wiki/Special:EntityData/${id}.json").getText('UTF-8')
+	//println "Loaded id $id, got this: "+groovy.json.JsonOutput.prettyPrint(text)
     def items = new groovy.json.JsonSlurper().parseText(text)
     return items.entities[ id ]
+  }
+
+  private void checkProperty(item)
+  {
+	  if(item['datatype'] && item['datatype'] == 'wikibase-item') {
+		  initEdge(item['id'])
+	  } else {
+		  initProperty(item['id'])
+	  }
   }
 
   private def getOrCreateVertexForItem(id) {
@@ -62,6 +92,7 @@ class Loader {
       return v
     }
     println "Creating $id."
+	
     return g.addVertex([wikibaseId: id])
   }
 
@@ -71,7 +102,25 @@ class Loader {
       return
     }
     for (label in item.labels) {
-      v['label' + label.key.capitalize()] = label.value.value
+		def l = 'label' + label.key.capitalize()
+      	try {
+			v[l] = label.value.value
+		} catch(java.lang.IllegalArgumentException e) {
+			initProperty(l, label.value.value.class)
+			v[l] = label.value.value
+		}
+    }
+	if(!item.descriptions) {
+		return
+	}
+    for (description in item.descriptions) {
+		def l = 'desc' + description.key.capitalize()
+      	try {
+			v[l] = description.value.value
+		} catch(java.lang.IllegalArgumentException e) {
+			initProperty(l, description.value.value.class)
+			v[l] = description.value.value
+		}
     }
     // TODO clear labels that are set but not sent
   }
@@ -113,12 +162,19 @@ class Loader {
         return relationType.isEdgeLabel()
       }
     }
+	def prop = g.V('wikibaseId', property)
     // Property doesn't yet exist as either an edge label or property or we're on the
     // gremlin console so lets ask wikidata. This isn't to inefficient because we'll
     // create it soon (hopefully).
-    println "Asking wikidata about $property."
-    def prop = fetchEntity(property)
-    return prop.datatype == 'wikibase-item'
+	if(!prop) {
+		println "Asking wikidata about $property."
+		refreshWikidataItem(property)
+		prop = g.V('wikibaseId', property).next()
+	} else {
+		prop = prop.next()
+	}
+//    def prop = fetchEntity(property)
+    return prop['datatype'] == 'wikibase-item'
   }
 
   private void updateEdgeClaim(v, claim) {
@@ -145,9 +201,15 @@ class Loader {
       println "Unknown snaktype on ${v.wikibaseId}:  ${claim.snaktype}.  Skipping."
       return
     }
+	if(!g.getEdgeLabel(claim.property)) {
+		g.makeEdgeLabel(claim.property).make()
+		g.commit()
+	}
     // Don't add it if it doesn't exist
     if (!v.out(claim.property).retain([outgoing])) {
+	  // println "Adding edge ${claim.property} to $outgoing"
       v.addEdge(claim.property, outgoing)
+	  //byId(claim.property)
     }
   }
 
@@ -212,7 +274,7 @@ class Loader {
     // TODO return the time value.....
   }
 
-  private def initProperty(name) {
+  private def initProperty(name, dataType=Object.class) {
     // We use supportsTransactions as a standin for supporting getManagementSystem.....
     if (!g.getFeatures().supportsTransactions) {
       return
@@ -222,12 +284,29 @@ class Loader {
       return
     }
     println "Creating property $name."
+	//byId(name)
     def mgmt = g.getManagementSystem()
-    def dataType = Object.class // TODO figure out the right type
+    //def dataType = Object.class // TODO figure out the right type
     propertyKey = mgmt.makePropertyKey(name).dataType(dataType).make()
     def indexName = "by_${name}"
     // TODO we should use a mixed index here to support range queries but those need Elasticsearch
-    mgmt.buildIndex(indexName, Vertex.class).addKey(propertyKey).buildCompositeIndex()
+    //mgmt.buildIndex(indexName, Vertex.class).addKey(propertyKey).buildCompositeIndex()
+    // This does not commit the graph transaction - just the management one
+    mgmt.commit()
+  }
+
+  private def initEdge(name) {
+    // We use supportsTransactions as a standin for supporting getManagementSystem.....
+    if (!g.getFeatures().supportsTransactions) {
+      return
+    }
+    def mgmt = g.getManagementSystem()
+    def edgeKey = mgmt.getEdgeLabel(name);
+    if (edgeKey != null) {
+      return
+    }
+    println "Creating edge $name."
+	mgmt.makeEdgeLabel(name).make()
     // This does not commit the graph transaction - just the management one
     mgmt.commit()
   }

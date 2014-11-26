@@ -27,6 +27,14 @@ class DomainSpecificLanguage {
     Pipe.metaClass.isA = { id ->
       delegate.out('P31').has('wikibaseId', id).hasNext()
     }
+    Gremlin.addStep('claim')
+    Pipe.metaClass.claim = {
+	  def p = delegate.V.has('type', 'property').has('labelEn', it)
+	  if(p) {
+		  delegate.sideEffect{loader.byId(p.wikibaseId)}.out(p.wikibaseId)
+	  }
+	  null
+    }
     Gremlin.addStep('toCountry')
     Pipe.metaClass.toCountry = {
       // If this place _is_ a country the return it

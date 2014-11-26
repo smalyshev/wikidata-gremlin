@@ -11,11 +11,12 @@ class ConsoleInit {
     this.script = script
   }
 
-  static void init(script) {
+  static ConsoleInit init(script) {
     ConsoleInit init = new ConsoleInit(script)
     init.graph()
     init.schema()
     init.dsl()
+	return init
   }
 
   /**
@@ -63,5 +64,10 @@ class ConsoleInit {
     def loader = new org.wikidata.gremlin.Loader(script.g)
     def dsl = new org.wikidata.gremlin.DomainSpecificLanguage(loader)
     dsl.setup()
+  }
+  
+  static void loadData(script, max, procs, num, file, ignore_props=true) {
+      def loader = new org.wikidata.gremlin.Loader(script.g, ignore_props)
+	  new DataLoader(loader).setReaders(procs).setNum(num).gzipFile(file).read(max)
   }
 }

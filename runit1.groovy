@@ -1,0 +1,6 @@
+//g = TitanFactory.build().set("storage.backend","cassandra").set("storage.hostname","127.0.0.1").set("storage.buffer-size", ).set("storage.batch-loading", true).iset("ids.block-size", "10000").open()
+g = TitanFactory.open("config.properties")
+groovy.grape.Grape.grab(group:'org.wikidata', module:'gremlin', version:'0.0.1-SNAPSHOT')
+w = org.wikidata.gremlin.ConsoleInit.init(this)
+propLoader = new org.wikidata.gremlin.DataLoader(g, false)
+dataLoader = new org.wikidata.gremlin.DataLoader(g, true)
