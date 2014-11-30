@@ -23,11 +23,21 @@ class DomainSpecificLanguage {
     Pipe.metaClass.refresh = {
       delegate.sideEffect{loader.byVertex(it)}
     }
+    Gremlin.addStep('reload')
+    Pipe.metaClass.reload = {
+      delegate.sideEffect{it.stub=true; loader.byVertex(it)}
+    }
     Gremlin.addStep('isA')
     Pipe.metaClass.isA = { id ->
       delegate.out('P31').has('wikibaseId', id).hasNext()
     }
-    Gremlin.addStep('claim')
+	// Produces list of entities that are instances of this class
+	// E.g. g.listOf('Q5') are humans
+	Gremlin.addStep('listOf')
+	Pipe.metaClass.listOf = { 
+		delegate.V('wikibaseId', it).in('P31')
+	}
+/*    Gremlin.addStep('claim')
     Pipe.metaClass.claim = {
 	  def p = delegate.V.has('type', 'property').has('labelEn', it)
 	  if(p) {
@@ -35,7 +45,7 @@ class DomainSpecificLanguage {
 	  }
 	  null
     }
-    Gremlin.addStep('toCountry')
+*/    Gremlin.addStep('toCountry')
     Pipe.metaClass.toCountry = {
       // If this place _is_ a country the return it
       delegate.as('next').ifThenElse{it.isA('Q6256')}{
@@ -46,7 +56,7 @@ class DomainSpecificLanguage {
           it.out('P17').refresh()
         }{
           // Otherwise follow "is in the administrative territorial entity"
-          it.out('P131').refresh().loop('next'){it.loops < 10}
+          it.out('P131').refresh().loop('next'){it && it.loops < 10}
         }
       }
     }

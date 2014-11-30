@@ -131,25 +131,49 @@ class Loader {
       return
     }
     for (claimsOnProperty in item.claims) {
-      def property = claimsOnProperty.key
-      for (claim in claimsOnProperty.value) {
-        claim = claim.mainsnak
-        if (claim == null) {
-          println "${item.id}'s ${property} contains a claim without a mainSnak.  Skipping."
-          continue
-        }
+		if(!claimsOnProperty.value.size()) {
+			continue
+		}
+		def property = claimsOnProperty.key
+		def firstClaim = claimsOnProperty.value[0]
         boolean isEdge
-        if (claim.datatype) {
-          isEdge = claim.datatype == 'wikibase-item'
+		// Here we are assuming claims are homogenuos at least to the measure of 
+		// not mixing edges and properties under the same name, since our import data model
+		// does not support such thing
+        if (firstClaim.datatype) {
+          isEdge = firstClaim.datatype == 'wikibase-item'
         } else {
           isEdge = inferIsEdgeFromProperty(property)
         }
-        if (isEdge) {
-          updateEdgeClaim(v, claim)
-        } else {
-          updatePropertyClaim(v, claim)
-        }
-      }
+		def updater = isEdge?this.&updateEdgeClaim:this.&updatePropertyClaim
+		def currentClaim = null
+      	for (claim in claimsOnProperty.value) {
+	        if (claim.mainsnak == null) {
+	          println "${item.id}'s ${property} contains a claim without a mainSnak.  Skipping."
+	          continue
+	        }
+			// TODO: handle references
+			// TODO: we should distinguish between current data and past data by qualifiers
+			if(claim.qualifiers && claim.qualifiers['P585']) {
+				// point in time qualifier - we should only record the last one
+				def claimTime = extractPropertyValueFromTime(v, claim.qualifiers['P585'][0]?.datavalue?.value?.time)
+				if(claimTime) {
+					claim._time = claimTime
+					if(!currentClaim || currentClaim._time < claimTime) {
+						currentClaim = claim
+					}
+					// record this as past claim
+					addPastClaim(v, claim.mainsnak, claimTime)
+				} else {
+					println "${item.id}'s ${property} has quailifier P585 but ${claim.qualifiers['P585'][0]} does not parse as time.  Skipping."
+				}
+				continue
+			}
+			updater(v, claim.mainsnak)
+		}
+		if(currentClaim) {
+			updater(v, currentClaim.mainsnak)
+		}
     }
     // TODO cleanup extra properties and outgoing edges
   }
@@ -177,6 +201,10 @@ class Loader {
     return prop['datatype'] == 'wikibase-item'
   }
 
+  private void addPastClaim(v, claim, time) {
+	  // TODO: how to add past claims?
+  }
+
   private void updateEdgeClaim(v, claim) {
     // This claim is an edge so select the outoing edge:
     def outgoing
@@ -201,11 +229,12 @@ class Loader {
       println "Unknown snaktype on ${v.wikibaseId}:  ${claim.snaktype}.  Skipping."
       return
     }
+/*	TODO: enable for batch loading?
 	if(!g.getEdgeLabel(claim.property)) {
 		g.makeEdgeLabel(claim.property).make()
 		g.commit()
 	}
-    // Don't add it if it doesn't exist
+*/    // Don't add it if it already exists
     if (!v.out(claim.property).retain([outgoing])) {
 	  // println "Adding edge ${claim.property} to $outgoing"
       v.addEdge(claim.property, outgoing)
@@ -215,7 +244,7 @@ class Loader {
 
   private def updatePropertyClaim(v, claim) {
     // This claim is a property
-    initProperty(claim.property)
+    // TODO: enable for batch loading? initProperty(claim.property)
 
     // Pick a value for the property
     def value
@@ -271,7 +300,12 @@ class Loader {
       println "Error parsing date on ${v.wikibaseId}:  ${time}.  Skipping."
       return null
     }
-    // TODO return the time value.....
+	int y = matches[0][1] as int
+	if(y < 0) {
+		// TODO: Java is not good with handling BC, need better solution
+		return "somevalue"
+	}
+    Date.parse("yyyy-MM-dd HH:mm:ss", "$y-${matches[0][2]}-${matches[0][3]} ${matches[0][4]}:${matches[0][5]}:${matches[0][6]}") 
   }
 
   private def initProperty(name, dataType=Object.class) {

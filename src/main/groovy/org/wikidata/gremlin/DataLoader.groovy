@@ -53,12 +53,14 @@ class DataLoader {
 	}
 	
 	protected void initRejects() {
-		rejects = new File("rejects.${fileName}.${numReaders}.${myNum}.json")
+		String basename = (fileName =~ /[^\/]+$/)[0]
+		rejects = new File("rejects.${basename}.${numReaders}.${myNum}.json")
 	}
 	
 	public void load(max) {
 		initStream()
 		initRejects()
+		def json = new groovy.json.JsonSlurper()
 		String line = stream.readLine()
 		if(line[0] == '[') {
 			line = stream.readLine()
@@ -77,7 +79,7 @@ class DataLoader {
    		 	}
 			
 			try {
-				def item = new groovy.json.JsonSlurper().parseText(line)
+				def item = json.parseText(line)
 	   		 	if(!item) {
 	   			 return
 	   		 	}
@@ -85,6 +87,7 @@ class DataLoader {
 			} catch(e) {
 				println "Importing line ${stream.getLineNumber()} failed: $e"
 				rejects << line
+				rejects << "\n"
 			}
 			(0..numReaders-1).each() { line = stream.readLine() }
 		}
