@@ -181,7 +181,9 @@ class Loader {
   private boolean inferIsEdgeFromProperty(property) {
     // We use supportsTransactions as a standin for supporting getManagementSystem.....
     if (g.getFeatures().supportsTransactions) {
-      def relationType = g.getManagementSystem().getRelationType(property)
+	  def mgmt = g.getManagementSystem()
+      def relationType = mgmt.getRelationType(property)
+	  mgmt.rollback()
       if (relationType) {
         return relationType.isEdgeLabel()
       }
@@ -313,13 +315,14 @@ class Loader {
     if (!g.getFeatures().supportsTransactions) {
       return
     }
-    def propertyKey = g.getManagementSystem().getPropertyKey(name);
+    def mgmt = g.getManagementSystem()
+    def propertyKey = mgmt.getPropertyKey(name);
     if (propertyKey != null) {
+		mgmt.rollback()
       return
     }
     println "Creating property $name."
 	//byId(name)
-    def mgmt = g.getManagementSystem()
     //def dataType = Object.class // TODO figure out the right type
     propertyKey = mgmt.makePropertyKey(name).dataType(dataType).make()
     def indexName = "by_${name}"
@@ -337,6 +340,7 @@ class Loader {
     def mgmt = g.getManagementSystem()
     def edgeKey = mgmt.getEdgeLabel(name);
     if (edgeKey != null) {
+		mgmt.rollback()
       return
     }
     println "Creating edge $name."
