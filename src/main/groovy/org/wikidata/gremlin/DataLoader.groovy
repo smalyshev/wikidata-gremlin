@@ -2,17 +2,23 @@ package org.wikidata.gremlin
 
 import java.io.Reader
 import com.tinkerpop.blueprints.Graph
+import groovy.json.*
 
 class DataLoader {
+	final int LINES_PER_COMMIT = 1000
 	final Loader loader
+	final Graph g
 	private Reader stream
 	private File rejects
+	private File processed
 	private String fileName
 	private int numReaders = 1
 	private int myNum = 0
 	private boolean gzipped
+	private int skipLines = 0
 	
 	DataLoader(Graph g, boolean ignore_props = false) {
+		this.g = g
 		this.loader = new org.wikidata.gremlin.Loader(g, ignore_props)
 	}
 	
@@ -55,12 +61,13 @@ class DataLoader {
 	protected void initRejects() {
 		String basename = (fileName =~ /[^\/]+$/)[0]
 		rejects = new File("rejects.${basename}.${numReaders}.${myNum}.json")
+		processed = new File("processed.${basename}.${numReaders}.${myNum}.json")
 	}
 	
 	public void load(max) {
 		initStream()
 		initRejects()
-		def json = new groovy.json.JsonSlurper()
+		def json = new JsonSlurper() //.setType(JsonParserType.INDEX_OVERLAY )
 		String line = stream.readLine()
 		if(line[0] == '[') {
 			line = stream.readLine()
@@ -90,6 +97,13 @@ class DataLoader {
 				rejects << "\n"
 			}
 			(0..numReaders-1).each() { line = stream.readLine() }
+			if(i != 0 && i % LINES_PER_COMMIT == 0) {
+				g.commit()
+				println "Committed on row $i"
+				def fw = new FileWriter(processed)
+				fw.write(i as String)
+				fw.close()
+			}
 		}
 	}
 }

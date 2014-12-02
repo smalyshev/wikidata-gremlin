@@ -59,9 +59,9 @@ class Loader {
 		  v['datatype'] = item['datatype']
 	  }
 	  
-      if (g.getFeatures().supportsTransactions) {
-        g.commit()
-      }
+//      if (g.getFeatures().supportsTransactions) {
+//        g.commit()
+//      }
   }
 
   private def fetchEntity(id) {
@@ -110,7 +110,7 @@ class Loader {
 			v[l] = label.value.value
 		}
     }
-	if(!item.descriptions) {
+/*	if(!item.descriptions) {
 		return
 	}
     for (description in item.descriptions) {
@@ -122,7 +122,7 @@ class Loader {
 			v[l] = description.value.value
 		}
     }
-    // TODO clear labels that are set but not sent
+*/    // TODO clear labels that are set but not sent
   }
 
   private void updateClaims(v, item) {
