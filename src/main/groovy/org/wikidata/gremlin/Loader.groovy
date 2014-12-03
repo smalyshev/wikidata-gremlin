@@ -4,11 +4,16 @@ package org.wikidata.gremlin
 
 import com.tinkerpop.blueprints.Graph
 import com.tinkerpop.blueprints.Vertex
-import com.tinkerpop.pipes.Pipe
+import java.text.SimpleDateFormat
+import com.thinkaurelius.titan.core.attribute.Geoshape
 
 class Loader {
+  final String QUALIFIER_PROPERTY = "_qualifiers"
+  final String PAST_SUFFIX = "_all"
+	
   final Graph g
   boolean skip_props
+  private def currentVertex
 
   Loader(Graph g, skip_props = true) {
     this.g = g
@@ -40,6 +45,10 @@ class Loader {
   private void refreshWikidataItem(id) {
     def item = fetchEntity(id)
 	loadFromItem(item)
+	if (g.getFeatures().supportsTransactions) {
+		// We do commit here since it's one-off update
+		g.commit()
+	}
   }
   
   public void loadFromItem(item) {
@@ -49,6 +58,7 @@ class Loader {
 		  return
 	  }
       def v = getOrCreateVertexForItem(id)
+	  currentVertex = v
 	  if(isProperty) {
     	  checkProperty(item)
       }
@@ -58,7 +68,8 @@ class Loader {
 	  if(item['datatype']) {
 		  v['datatype'] = item['datatype']
 	  }
-	  
+
+// Not committing here to allow DataLoader to group updates	  
 //      if (g.getFeatures().supportsTransactions) {
 //        g.commit()
 //      }
@@ -66,10 +77,27 @@ class Loader {
 
   private def fetchEntity(id) {
 	  println "Fetching ${id} from Wikidata"
-    def text = new URL("http://www.wikidata.org/wiki/Special:EntityData/${id}.json").getText('UTF-8')
-	//println "Loaded id $id, got this: "+groovy.json.JsonOutput.prettyPrint(text)
-    def items = new groovy.json.JsonSlurper().parseText(text)
-    return items.entities[ id ]
+	  def text = new URL("http://www.wikidata.org/wiki/Special:EntityData/${id}.json").getText('UTF-8')
+	  //println "Loaded id $id, got this: "+groovy.json.JsonOutput.prettyPrint(text)
+	  def items = new groovy.json.JsonSlurper().parseText(text)
+	  return items.entities[ id ]
+  }
+
+  private Class getDataType(wikitype)
+  {
+	  // TODO: figure out how to make types for with novalue/somevalue
+	  switch(wikitype) {
+		  case 'string':
+		  case 'monolingualtext':
+		  case 'url':
+		  case 'commonsMedia':     return String.class
+		  case 'globe-coordinate': return Geoshape.class
+		  // TODO: which class we have to use here? Maybe BigInteger?
+		  case 'quantity':         return long.class
+		  case 'time':             return Date.class
+		  default:
+		  	return Object.class
+	  }
   }
 
   private void checkProperty(item)
@@ -96,9 +124,16 @@ class Loader {
     return g.addVertex([wikibaseId: id])
   }
 
-  private void updateLabels(v, item) {
+  private void updateLabels(v, item) 
+  {
+	// clean labels that do not exist in item
+	for(p in v.getProperties()) {
+		def l = p.getPropertyKey()?.getName();
+		if(l && l.length() > 5 && l[0..4] == 'label' && !(l in item.labels)) {
+			v.removeProperty(l)
+		}
+	}
     if (!item.labels) {
-      // TODO clear all labels
       return
     }
     for (label in item.labels) {
@@ -122,12 +157,17 @@ class Loader {
 			v[l] = description.value.value
 		}
     }
-*/    // TODO clear labels that are set but not sent
+*/    
   }
 
   private void updateClaims(v, item) {
+  	for(p in v.getProperties()) {
+  		def l = p.getPropertyKey()?.getName();
+  		if(l && l.length() > 1 && l[0] == 'P' && !(l in item.claims)) {
+  			v.removeProperty(l)
+  		}
+  	}
     if (!item.claims) {
-      // TODO clear all claims
       return
     }
     for (claimsOnProperty in item.claims) {
@@ -156,42 +196,51 @@ class Loader {
 			// TODO: we should distinguish between current data and past data by qualifiers
 			if(claim.qualifiers && claim.qualifiers['P585']) {
 				// point in time qualifier - we should only record the last one
-				def claimTime = extractPropertyValueFromTime(v, claim.qualifiers['P585'][0]?.datavalue?.value?.time)
-				if(claimTime) {
+				def claimTime = extractPropertyValueFromTime(claim.qualifiers['P585'][0]?.datavalue?.value?.time)
+				if(claimTime && (claimTime instanceof Date)) {
 					claim._time = claimTime
 					if(!currentClaim || currentClaim._time < claimTime) {
 						currentClaim = claim
 					}
 					// record this as past claim
-					addPastClaim(v, claim.mainsnak, claimTime)
 				} else {
-					println "${item.id}'s ${property} has quailifier P585 but ${claim.qualifiers['P585'][0]} does not parse as time.  Skipping."
+					println "${item.id}'s ${property} has quailifier P585 (point-in-time) but claim.qualifiers['P585'][0] does not parse as time.  Skipping."
 				}
+				addPastClaim(v, claim, isEdge, claimTime)
 				continue
 			}
-			updater(v, claim.mainsnak)
+			// End date - if it's lower than now it's a past claim
+			// Note that if we don't have a value it's OK to pass it, we assume it's current
+			if(claim.qualifiers && claim.qualifiers['P582'] && claim.qualifiers['P582'][0]?.snaktype == 'value') {
+				def claimTime = extractPropertyValueFromTime(claim.qualifiers['P582'][0]?.datavalue?.value?.time)
+				addPastClaim(v, claim, isEdge, claimTime)
+				if(!claimTime || !(claimTime instanceof Date)) {
+					println "${item.id}'s ${property} has quailifier P582 but claim.qualifiers['P582'][0] does not parse as time.  Skipping."
+				}
+				if(claimTime < (new Date())) {
+					continue
+				} 
+			}
+			updater(v, claim.mainsnak, claim.qualifiers)
 		}
 		if(currentClaim) {
-			updater(v, currentClaim.mainsnak)
+			updater(v, currentClaim.mainsnak, currentClaim.qualifiers)
 		}
     }
-    // TODO cleanup extra properties and outgoing edges
+    // TODO cleanup extra outgoing edges
   }
 
   private boolean inferIsEdgeFromProperty(property) {
-    // We use supportsTransactions as a standin for supporting getManagementSystem.....
-    if (g.getFeatures().supportsTransactions) {
-	  def mgmt = g.getManagementSystem()
-      def relationType = mgmt.getRelationType(property)
-	  mgmt.rollback()
+	  def relationType = g.getRelationType(property)
       if (relationType) {
         return relationType.isEdgeLabel()
       }
-    }
 	def prop = g.V('wikibaseId', property)
-    // Property doesn't yet exist as either an edge label or property or we're on the
-    // gremlin console so lets ask wikidata. This isn't to inefficient because we'll
-    // create it soon (hopefully).
+	// This should never happen if we do import properly, e.g.
+	// 1. Extract properties
+	// 2. Import properties
+	// 3. Import non-property data
+	// But if we mess up, we have a fallback here
 	if(!prop) {
 		println "Asking wikidata about $property."
 		refreshWikidataItem(property)
@@ -199,15 +248,59 @@ class Loader {
 	} else {
 		prop = prop.next()
 	}
-//    def prop = fetchEntity(property)
     return prop['datatype'] == 'wikibase-item'
   }
 
-  private void addPastClaim(v, claim, time) {
-	  // TODO: how to add past claims?
+  private void removeClaim(v, claim, isEdge)
+  {
+	if(!isEdge) {
+		v.removeProperty(claim.property)
+	} else {
+        def outgoingId = 'Q' + claim.datavalue.value[ 'numeric-id' ]
+		def edge = v.outE(claim.property).as('edge').inV.has('wikibaseId', outgoingId).back('edge')
+		if (edge.hasNext()) {
+			edge = edge.next()
+			edge.remove()
+		}
+	}
   }
 
-  private void updateEdgeClaim(v, claim) {
+  private void addPastClaim(v, claim, isEdge, time) {
+	  // TODO: how to add past claims?
+	  // For now, remove it as current claim
+	  removeClaim(v, claim.mainsnak, isEdge)
+	  if(isEdge) {
+		  def claimCopy = claim.mainsnak.clone()
+		  claimCopy.property += PAST_SUFFIX
+		  println "Adding past $claimCopy.property to $v: $claimCopy"
+		  updateEdgeClaim(v, claimCopy, claim.qualifiers)
+	  }
+  }
+
+  private void addQualifiers(item, qualifiers) {
+	  for(q in qualifiers) {
+		  if(!q.value) {
+			  continue
+		  }
+		  def qname = q.key
+		  item[qname] = []
+		  for(qitem in q.value) {
+			  def value
+			  if(qitem.snaktype != "value") {
+				  value = qitem.snaktype
+			  } else {
+				  if(qitem.datatype == 'wikibase-item') {
+					  value = "Q"+qitem.datavalue?.value['numeric-id']
+				  } else {
+					  value = extractPropertyValueFromClaim(qitem)
+				  }
+			  }
+			  item[qname] << value
+		  }
+	  }
+  }
+
+  private void updateEdgeClaim(v, claim, qualifiers=null) {
     // This claim is an edge so select the outoing edge:
     def outgoing
     switch (claim.snaktype) {
@@ -237,23 +330,27 @@ class Loader {
 		g.commit()
 	}
 */    // Don't add it if it already exists
-    if (!v.out(claim.property).retain([outgoing])) {
-	  // println "Adding edge ${claim.property} to $outgoing"
-      v.addEdge(claim.property, outgoing)
-	  //byId(claim.property)
+	def edge = v.outE(claim.property).as('edge').inV.retain([outgoing]).back('edge')
+	if(edge.hasNext()) {
+		edge = edge.next()
+	} else {
+		// println "Adding edge ${v.wikibaseId}--${claim.property}-->${outgoing.wikibaseId}"
+		edge = v.addEdge(claim.property, outgoing)
+	}
+    if(qualifiers) {
+	  // println "Adding qualifiers to $edge: $qualifiers"
+	  edge[QUALIFIER_PROPERTY] = [:]
+	  addQualifiers(edge[QUALIFIER_PROPERTY], qualifiers)
     }
   }
 
-  private def updatePropertyClaim(v, claim) {
-    // This claim is a property
-    // TODO: enable for batch loading? initProperty(claim.property)
-
+  private def updatePropertyClaim(v, claim, qualifiers = null) {
     // Pick a value for the property
     def value
     switch (claim.snaktype) {
     case 'value':
       // TODO this is a simplification
-      value = extractPropertyValueFromClaim(v, claim)
+      value = extractPropertyValueFromClaim(claim)
       if (value == null) {
         return
       }
@@ -271,43 +368,61 @@ class Loader {
       return
     }
     v[ claim.property ] = value
+    if(qualifiers) {
+	  // println "Adding qualifiers to $edge: $qualifiers"
+	  def qname = claim.property+QUALIFIER_PROPERTY
+	  v[qname] = [:]
+	  addQualifiers(v[qname], qualifiers)
+    }
+	
   }
 
-  private def extractPropertyValueFromClaim(v, claim) {
+  private def extractPropertyValueFromClaim(claim) {
     def value = claim.datavalue.value
-    switch (claim.datatype) {
-    case 'commonsMedia':     return value
-    case 'globe-coordinate': return extractPropertyValueFromGlobeCoordinate(value)
-    case 'monolingualtext':  return "${value.language}:${value.text}".toString()
-    case 'quantity':         return value.amount
-    case 'string':           return value
-    case 'time':             return extractPropertyValueFromTime(v, value)
-    case 'url':              return value
-    default:
-      println "Unkown datatype on ${v.wikibaseId}:  ${claim.datatype}.  Skipping."
-      return null
-    }
+	try {
+	    switch (claim.datatype) {
+		    case 'commonsMedia':     return value
+		    case 'globe-coordinate': return extractPropertyValueFromGlobeCoordinate(value)
+		    case 'monolingualtext':  return "${value.language}:${value.text}".toString()
+		    case 'quantity':         return value.amount
+		    case 'string':           return value
+		    case 'time':             return extractPropertyValueFromTime(value.time)
+		    case 'url':              return value
+		    default:
+		      println "Unkown datatype on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype}.  Skipping."
+		      return null
+	    }
+	} catch(Exception e) {
+		println "Value parsing failed on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype} with: $e"
+		return null
+	}
   }
 
   private def extractPropertyValueFromGlobeCoordinate(coord) {
     // Has latitude, longitude, alt, precision, globe
-    return "${coord.latitude} N ${coord.longitude} W".toString() // TODO this is silly
+    return Geoshape.point(coord.latitude, coord.longitude)
+  }
+  
+  private def getCurrentVertex() {
+	  return currentVertex
   }
 
   // Format looks like   +0001783 - 12 - 23 T 00 : 00 : 00 Z without the spaces
   private timeFormat = /(sd{4,50})-(dd)-(dd)T(dd):(dd):(dd)Z/.replaceAll('s', /[+-]/).replaceAll('d', /[0-9]/)
-  private def extractPropertyValueFromTime(v, time) {
+  private def extractPropertyValueFromTime(time) {
     def matches = time =~ timeFormat
     if (!matches) {
-      println "Error parsing date on ${v.wikibaseId}:  ${time}.  Skipping."
+      println "Error parsing date on ${getCurrentVertex()?.wikibaseId}:  ${time}.  Skipping."
       return null
     }
-	int y = matches[0][1] as int
+	int y = matches[0][1] as long
 	if(y < 0) {
 		// TODO: Java is not good with handling BC, need better solution
 		return "somevalue"
 	}
-    Date.parse("yyyy-MM-dd HH:mm:ss", "$y-${matches[0][2]}-${matches[0][3]} ${matches[0][4]}:${matches[0][5]}:${matches[0][6]}") 
+	//def df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    //return df.parse(time) 
+	Date.parse("yyyy-MM-dd HH:mm:ss", "$y-${matches[0][2]}-${matches[0][3]} ${matches[0][4]}:${matches[0][5]}:${matches[0][6]}") 
   }
 
   private def initProperty(name, dataType=Object.class) {
@@ -319,13 +434,11 @@ class Loader {
     def propertyKey = mgmt.getPropertyKey(name);
     if (propertyKey != null) {
 		mgmt.rollback()
-      return
+		return
     }
     println "Creating property $name."
-	//byId(name)
-    //def dataType = Object.class // TODO figure out the right type
     propertyKey = mgmt.makePropertyKey(name).dataType(dataType).make()
-    def indexName = "by_${name}"
+    // def indexName = "by_${name}"
     // TODO we should use a mixed index here to support range queries but those need Elasticsearch
     //mgmt.buildIndex(indexName, Vertex.class).addKey(propertyKey).buildCompositeIndex()
     // This does not commit the graph transaction - just the management one
@@ -341,7 +454,7 @@ class Loader {
     def edgeKey = mgmt.getEdgeLabel(name);
     if (edgeKey != null) {
 		mgmt.rollback()
-      return
+		return
     }
     println "Creating edge $name."
 	mgmt.makeEdgeLabel(name).make()

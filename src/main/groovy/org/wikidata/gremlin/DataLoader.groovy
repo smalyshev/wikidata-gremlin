@@ -5,7 +5,7 @@ import com.tinkerpop.blueprints.Graph
 import groovy.json.*
 
 class DataLoader {
-	final int LINES_PER_COMMIT = 1000
+	private int LINES_PER_COMMIT = 10000
 	final Loader loader
 	final Graph g
 	private Reader stream
@@ -45,6 +45,12 @@ class DataLoader {
 	{
 		fileName = f
 		gzipped = true
+		return this
+	}
+	
+	public DataLoader setLines(int l) 
+	{
+		LINES_PER_COMMIT = l
 		return this
 	}
 	
