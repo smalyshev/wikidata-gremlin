@@ -163,10 +163,17 @@ class Loader {
   private void updateClaims(v, item) {
   	for(p in v.getProperties()) {
   		def l = p.getPropertyKey()?.getName();
-  		if(l && l.length() > 1 && l[0] == 'P' && !(l in item.claims)) {
+  		if(l && l.length() > 1 && l[0] == 'P') {
   			v.removeProperty(l)
   		}
   	}
+  	for(e in v.outE()) {
+  		def l = e.getEdgeLabel().getName()
+  		if(l && l.length() > 1 && l[0] == 'P') {
+  			e.remove()
+  		}
+  	}
+	
     if (!item.claims) {
       return
     }
@@ -269,7 +276,7 @@ class Loader {
 	  // TODO: how to add past claims?
 	  // For now, remove it as current claim
 	  removeClaim(v, claim.mainsnak, isEdge)
-	  if(isEdge) {
+	  if(0 && isEdge) {
 		  def claimCopy = claim.mainsnak.clone()
 		  claimCopy.property += PAST_SUFFIX
 		  println "Adding past $claimCopy.property to $v: $claimCopy"
