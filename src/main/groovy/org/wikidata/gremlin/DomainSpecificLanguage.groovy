@@ -37,15 +37,13 @@ class DomainSpecificLanguage {
 	Pipe.metaClass.listOf = { 
 		delegate.V('wikibaseId', it).in('P31')
 	}
-/*    Gremlin.addStep('claim')
-    Pipe.metaClass.claim = {
-	  def p = delegate.V.has('type', 'property').has('labelEn', it)
-	  if(p) {
-		  delegate.sideEffect{loader.byId(p.wikibaseId)}.out(p.wikibaseId)
-	  }
-	  null
-    }
-*/    Gremlin.addStep('toCountry')
+	// if the list has elements ranked "preferred", take them, otherwise take all
+	Gremlin.addStep('preferred')
+	Pipe.metaClass.preferred = { prop ->
+		delegate.ifThenElse{it.outE(prop).has('rank', true).hasNext()}{it.outE(prop).has('rank', true)}{it.outE(prop)}
+	}
+	
+    Gremlin.addStep('toCountry')
     Pipe.metaClass.toCountry = {
       // If this place _is_ a country the return it
       delegate.as('next').ifThenElse{it.isA('Q6256')}{

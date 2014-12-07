@@ -57,7 +57,13 @@ class Loader {
 	  if(isProperty && skip_props) {
 		  return
 	  }
-      def v = getOrCreateVertexForItem(id)
+      def v = getOrCreateVertex(id)
+	  if(v['stub']) {
+		  v['stub'] = false
+		  println "Creating $id"
+	  } else {
+		  println "Updating $id"
+	  }
 	  currentVertex = v
 	  if(isProperty) {
     	  checkProperty(item)
@@ -70,9 +76,6 @@ class Loader {
 	  }
 
 // Not committing here to allow DataLoader to group updates	  
-//      if (g.getFeatures().supportsTransactions) {
-//        g.commit()
-//      }
   }
 
   private def fetchEntity(id) {
@@ -99,34 +102,44 @@ class Loader {
 		  	return Object.class
 	  }
   }
-
-  private void checkProperty(item)
+  
+  public String getValueName(itemName)
   {
-	  if(item['datatype'] && item['datatype'] == 'wikibase-item') {
-		  initEdge(item['id'])
-	  } else {
-		  initProperty(item['id'])
-	  }
+	  return itemName+"value"
   }
 
-  private def getOrCreateVertexForItem(id) {
+  public String getQualifierName(itemName)
+  {
+	  return itemName+"q"
+  }
+
+  private void checkProperty(item)
+  {	  
+	  // According to new data model, all claims are edges
+	  initEdge(item['id'])
+	  // For value properties, we also need the value prop
+	  if(item['datatype'] && item['datatype'] != 'wikibase-item') {
+		  initProperty(getValueName(item['id']))
+	  }
+	  // We also need qualifiers
+	  initProperty(getQualifierName(item['id']))
+  }
+
+  private def getOrCreateVertex(id) 
+  {
     def v = g.V('wikibaseId', id)
     if ( v ) {
-      println "Updating $id."
-      v = v.next()
-      if (v.stub) {
-        v.stub = false
-      }
-      return v
+      return v.next()
     }
-    println "Creating $id."
 	
-    return g.addVertex([wikibaseId: id])
+    return g.addVertex([wikibaseId: id, stub: true])
   }
 
   private void updateLabels(v, item) 
   {
 	// clean labels that do not exist in item
+	/* TODO: for now, we just wipe the properties clean and reinstate them.
+	In the future, we might want to have more intelligent strategies for updates */
 	for(p in v.getProperties()) {
 		def l = p.getPropertyKey()?.getName();
 		if(l && l.length() > 5 && l[0..4] == 'label' && !(l in item.labels)) {
@@ -145,7 +158,8 @@ class Loader {
 			v[l] = label.value.value
 		}
     }
-/*	if(!item.descriptions) {
+/*	TODO: do we want descriptions?
+	if(!item.descriptions) {
 		return
 	}
     for (description in item.descriptions) {
@@ -161,12 +175,7 @@ class Loader {
   }
 
   private void updateClaims(v, item) {
-  	for(p in v.getProperties()) {
-  		def l = p.getPropertyKey()?.getName();
-  		if(l && l.length() > 1 && l[0] == 'P') {
-  			v.removeProperty(l)
-  		}
-  	}
+	  // For now, we just wipe all property edges for update, we may want to do something smarter in the future
   	for(e in v.outE()) {
   		def l = e.getEdgeLabel().getName()
   		if(l && l.length() > 1 && l[0] == 'P') {
@@ -179,6 +188,7 @@ class Loader {
     }
     for (claimsOnProperty in item.claims) {
 		if(!claimsOnProperty.value.size()) {
+			// empty claim, ignore
 			continue
 		}
 		def property = claimsOnProperty.key
@@ -189,18 +199,21 @@ class Loader {
 		// does not support such thing
         if (firstClaim.datatype) {
           isEdge = firstClaim.datatype == 'wikibase-item'
-        } else {
-          isEdge = inferIsEdgeFromProperty(property)
         }
-		def updater = isEdge?this.&updateEdgeClaim:this.&updatePropertyClaim
 		def currentClaim = null
       	for (claim in claimsOnProperty.value) {
 	        if (claim.mainsnak == null) {
 	          println "${item.id}'s ${property} contains a claim without a mainSnak.  Skipping."
 	          continue
 	        }
-			// TODO: handle references
+			if (claim.rank == "deprecated") {
+				// ignore deprecated claims for now
+				return
+			}
+			
+/*			// TODO: handle references
 			// TODO: we should distinguish between current data and past data by qualifiers
+			// TODO: handle ranks
 			if(claim.qualifiers && claim.qualifiers['P585']) {
 				// point in time qualifier - we should only record the last one
 				def claimTime = extractPropertyValueFromTime(claim.qualifiers['P585'][0]?.datavalue?.value?.time)
@@ -226,14 +239,14 @@ class Loader {
 				}
 				if(claimTime < (new Date())) {
 					continue
-				} 
+				}
 			}
-			updater(v, claim.mainsnak, claim.qualifiers)
+*/			updateClaim(v, claim, isEdge)
 		}
-		if(currentClaim) {
+/*		if(currentClaim) {
 			updater(v, currentClaim.mainsnak, currentClaim.qualifiers)
 		}
-    }
+*/    }
     // TODO cleanup extra outgoing edges
   }
 
@@ -258,39 +271,12 @@ class Loader {
     return prop['datatype'] == 'wikibase-item'
   }
 
-  private void removeClaim(v, claim, isEdge)
-  {
-	if(!isEdge) {
-		v.removeProperty(claim.property)
-	} else {
-        def outgoingId = 'Q' + claim.datavalue.value[ 'numeric-id' ]
-		def edge = v.outE(claim.property).as('edge').inV.has('wikibaseId', outgoingId).back('edge')
-		if (edge.hasNext()) {
-			edge = edge.next()
-			edge.remove()
-		}
-	}
-  }
-
-  private void addPastClaim(v, claim, isEdge, time) {
-	  // TODO: how to add past claims?
-	  // For now, remove it as current claim
-	  removeClaim(v, claim.mainsnak, isEdge)
-	  if(0 && isEdge) {
-		  def claimCopy = claim.mainsnak.clone()
-		  claimCopy.property += PAST_SUFFIX
-		  println "Adding past $claimCopy.property to $v: $claimCopy"
-		  updateEdgeClaim(v, claimCopy, claim.qualifiers)
-	  }
-  }
-
   private void addQualifiers(item, qualifiers) {
 	  for(q in qualifiers) {
 		  if(!q.value) {
 			  continue
 		  }
 		  def qname = q.key
-		  item[qname] = []
 		  for(qitem in q.value) {
 			  def value
 			  if(qitem.snaktype != "value") {
@@ -302,24 +288,27 @@ class Loader {
 					  value = extractPropertyValueFromClaim(qitem)
 				  }
 			  }
-			  item[qname] << value
+			  item[getQualifierName(qname)] = value
 		  }
 	  }
   }
-
-  private void updateEdgeClaim(v, claim, qualifiers=null) {
+  
+  private void updateClaim(v, claim, isLink) {
     // This claim is an edge so select the outoing edge:
     def outgoing
-    switch (claim.snaktype) {
+	def data = claim.mainsnak
+	def value = null
+    switch (data.snaktype) {
     case 'value':
-      def outgoingId = 'Q' + claim.datavalue.value[ 'numeric-id' ]
-      outgoing = g.V('wikibaseId', outgoingId)
-      if (outgoing) {
-        outgoing = outgoing.next()
-        break
-      }
-      //println "Creating ${outgoingId} as a stub."
-      outgoing = g.addVertex([wikibaseId: outgoingId, stub: true])
+		if(data.datatype == 'wikibase-item') {
+			outgoing = getOrCreateVertex('Q' + data.datavalue.value[ 'numeric-id' ])
+		} else {
+	        value = extractPropertyValueFromClaim(data)
+	        if (value == null) {
+	          return
+	        }
+			outgoing = getOrCreateVertex(data.property)
+		}
       break
     case 'somevalue':
       outgoing = g.V('specialValueNode', 'unknown').next()
@@ -331,57 +320,15 @@ class Loader {
       println "Unknown snaktype on ${v.wikibaseId}:  ${claim.snaktype}.  Skipping."
       return
     }
-/*	TODO: enable for batch loading?
-	if(!g.getEdgeLabel(claim.property)) {
-		g.makeEdgeLabel(claim.property).make()
-		g.commit()
+	def edge = v.addEdge(data.property, outgoing)
+	edge['rank'] = (claim.rank == "preferred")
+	if(!isLink && value) {
+		edge[getValueName(data.property)] = value
 	}
-*/    // Don't add it if it already exists
-	def edge = v.outE(claim.property).as('edge').inV.retain([outgoing]).back('edge')
-	if(edge.hasNext()) {
-		edge = edge.next()
-	} else {
-		// println "Adding edge ${v.wikibaseId}--${claim.property}-->${outgoing.wikibaseId}"
-		edge = v.addEdge(claim.property, outgoing)
-	}
-    if(qualifiers) {
-	  // println "Adding qualifiers to $edge: $qualifiers"
-	  edge[QUALIFIER_PROPERTY] = [:]
-	  addQualifiers(edge[QUALIFIER_PROPERTY], qualifiers)
+    if(claim.qualifiers) {
+	  // println "Adding qualifiers to $edge"
+	  addQualifiers(edge, claim.qualifiers)
     }
-  }
-
-  private def updatePropertyClaim(v, claim, qualifiers = null) {
-    // Pick a value for the property
-    def value
-    switch (claim.snaktype) {
-    case 'value':
-      // TODO this is a simplification
-      value = extractPropertyValueFromClaim(claim)
-      if (value == null) {
-        return
-      }
-      break
-    case 'somevalue':
-      // TODO find better sentinel values 
-      value = 'somevalue'
-      break
-    case 'novalue':
-      // TODO find better sentinel values 
-      value = 'novalue'
-      break
-    default:
-      println "Unknown snaktype on ${v.wikibaseId}:  ${claim.snaktype}.  Skipping."
-      return
-    }
-    v[ claim.property ] = value
-    if(qualifiers) {
-	  // println "Adding qualifiers to $edge: $qualifiers"
-	  def qname = claim.property+QUALIFIER_PROPERTY
-	  v[qname] = [:]
-	  addQualifiers(v[qname], qualifiers)
-    }
-	
   }
 
   private def extractPropertyValueFromClaim(claim) {
@@ -396,7 +343,7 @@ class Loader {
 		    case 'time':             return extractPropertyValueFromTime(value.time)
 		    case 'url':              return value
 		    default:
-		      println "Unkown datatype on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype}.  Skipping."
+		      println "Unknown datatype on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype}.  Skipping."
 		      return null
 	    }
 	} catch(Exception e) {
@@ -407,7 +354,7 @@ class Loader {
 
   private def extractPropertyValueFromGlobeCoordinate(coord) {
     // Has latitude, longitude, alt, precision, globe
-    return Geoshape.point(coord.latitude, coord.longitude)
+    return Geoshape.point(coord.latitude as double, coord.longitude as double)
   }
   
   private def getCurrentVertex() {
@@ -446,9 +393,9 @@ class Loader {
     println "Creating property $name."
     propertyKey = mgmt.makePropertyKey(name).dataType(dataType).make()
     // def indexName = "by_${name}"
-    // TODO we should use a mixed index here to support range queries but those need Elasticsearch
+    /* TODO: we should use a mixed index here to support range queries but those need Elasticsearch
     //mgmt.buildIndex(indexName, Vertex.class).addKey(propertyKey).buildCompositeIndex()
-    // This does not commit the graph transaction - just the management one
+    // This does not commit the graph transaction - just the management one */
     mgmt.commit()
   }
 

@@ -5,7 +5,7 @@ import com.tinkerpop.blueprints.Graph
 import groovy.json.*
 
 class DataLoader {
-	private int LINES_PER_COMMIT = 10000
+	private int LINES_PER_COMMIT = 1000
 	final Loader loader
 	final Graph g
 	private Reader stream
@@ -67,7 +67,7 @@ class DataLoader {
 	protected void initRejects() {
 		String basename = (fileName =~ /[^\/]+$/)[0]
 		rejects = new File("rejects.${basename}.${numReaders}.${myNum}.json")
-		processed = new File("processed.${basename}.${numReaders}.${myNum}.json")
+		processed = new File("processed.${basename}.${numReaders}.${myNum}")
 	}
 	
 	public void load(max) {
@@ -85,7 +85,7 @@ class DataLoader {
 		}
 		for(i in 0..max-1) {
    		 	if(!line || line[0] == ']') {
-   				return
+   				break
    		 	}
 			if(line[-1] == ',') {
    				line = line[0..-2]
@@ -94,7 +94,7 @@ class DataLoader {
 			try {
 				def item = json.parseText(line)
 	   		 	if(!item) {
-	   			 return
+	   			 break
 	   		 	}
 	   		 	loader.loadFromItem(item)
 			} catch(e) {
@@ -111,5 +111,6 @@ class DataLoader {
 				fw.close()
 			}
 		}
+		g.commit()
 	}
 }

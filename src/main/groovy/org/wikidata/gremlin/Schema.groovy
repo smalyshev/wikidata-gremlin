@@ -35,6 +35,7 @@ class Schema {
 		mgmt.makePropertyKey('stub').dataType(Boolean.class).make()
 		mgmt.makePropertyKey('type').dataType(String.class).make()
 		mgmt.makePropertyKey('datatype').dataType(String.class).make()
+		mgmt.makePropertyKey('rank').dataType(Boolean.class).make()
     }
 /*    if (!mgmt.containsGraphIndex('by_type_and_label')) {
       println "Adding key and index for by_type_and_label"
@@ -43,9 +44,8 @@ class Schema {
       def type = mgmt.makePropertyKey('type').dataType(String.class).make()
       mgmt.buildIndex('by_type_and_label',Vertex.class).addKey(type).addKey(label).buildCompositeIndex()
     }
-*/    if (changed) {
+*/    
       mgmt.commit()
-    }
   }
 
   def setupConstantData() {
