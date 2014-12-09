@@ -2,6 +2,7 @@ package org.wikidata.gremlin
 
 import com.tinkerpop.blueprints.Graph
 import com.tinkerpop.blueprints.Vertex
+import com.tinkerpop.blueprints.Edge
 
 // Apache 2 Licensed
 
@@ -18,24 +19,25 @@ class Schema {
       return
     }
     def mgmt = g.getManagementSystem()
-    def changed = false
     if (!mgmt.containsGraphIndex('by_wikibaseId')) {
       println "Adding key and index for wikibaseId"
-      changed = true
       def wikibaseId = mgmt.makePropertyKey('wikibaseId').dataType(String.class).make()
       mgmt.buildIndex('by_wikibaseId',Vertex.class).addKey(wikibaseId).unique().buildCompositeIndex()
     }
     // There are two nodes with the special_value_node parameter: 'unknown', 'no_value'.  They are used to
     // for vertex type properties that are unknown or known to have no value.
     if (!mgmt.containsGraphIndex('by_specialValueNode')) {
-      println "Adding key and index for specialValueNode"
-      changed = true
-      def specialValueNode = mgmt.makePropertyKey('specialValueNode').dataType(String.class).make()
-      mgmt.buildIndex('by_specialValueNode',Vertex.class).addKey(specialValueNode).unique().buildCompositeIndex()
+		println "Adding key and index for specialValueNode"
+	  	def specialValueNode = mgmt.makePropertyKey('specialValueNode').dataType(String.class).make()
 		mgmt.makePropertyKey('stub').dataType(Boolean.class).make()
-		mgmt.makePropertyKey('type').dataType(String.class).make()
+		def type = mgmt.makePropertyKey('type').dataType(String.class).make()
+		def etype = mgmt.makePropertyKey('edgeType').dataType(String.class).make()
 		mgmt.makePropertyKey('datatype').dataType(String.class).make()
 		mgmt.makePropertyKey('rank').dataType(Boolean.class).make()
+
+        mgmt.buildIndex('by_specialValueNode',Vertex.class).addKey(specialValueNode).unique().buildCompositeIndex()
+        mgmt.buildIndex('by_type',Vertex.class).addKey(type).buildCompositeIndex()
+        mgmt.buildIndex('by_edgeType',Edge.class).addKey(type).buildCompositeIndex()
     }
 /*    if (!mgmt.containsGraphIndex('by_type_and_label')) {
       println "Adding key and index for by_type_and_label"

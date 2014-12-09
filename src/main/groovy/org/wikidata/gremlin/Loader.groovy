@@ -33,8 +33,8 @@ class Loader {
   /**
    * Loads a vertex from wikibase if it is a stub.
    */
-  void byVertex(v) {
-    if (v.stub) {
+  void byVertex(v, refresh = false) {
+    if (v.stub || refresh) {
       refreshWikidataItem(v.wikibaseId)
     }
   }
@@ -121,8 +121,6 @@ class Loader {
 	  if(item['datatype'] && item['datatype'] != 'wikibase-item') {
 		  initProperty(getValueName(item['id']))
 	  }
-	  // We also need qualifiers
-	  initProperty(getQualifierName(item['id']))
   }
 
   private def getOrCreateVertex(id) 
@@ -175,32 +173,15 @@ class Loader {
   }
 
   private void updateClaims(v, item) {
-	  // For now, we just wipe all property edges for update, we may want to do something smarter in the future
-  	for(e in v.outE()) {
-  		def l = e.getEdgeLabel().getName()
-  		if(l && l.length() > 1 && l[0] == 'P') {
-  			e.remove()
-  		}
-  	}
-	
     if (!item.claims) {
       return
     }
+	def claimsById = [:]
     for (claimsOnProperty in item.claims) {
 		if(!claimsOnProperty.value.size()) {
 			// empty claim, ignore
 			continue
 		}
-		def property = claimsOnProperty.key
-		def firstClaim = claimsOnProperty.value[0]
-        boolean isEdge
-		// Here we are assuming claims are homogenuos at least to the measure of 
-		// not mixing edges and properties under the same name, since our import data model
-		// does not support such thing
-        if (firstClaim.datatype) {
-          isEdge = firstClaim.datatype == 'wikibase-item'
-        }
-		def currentClaim = null
       	for (claim in claimsOnProperty.value) {
 	        if (claim.mainsnak == null) {
 	          println "${item.id}'s ${property} contains a claim without a mainSnak.  Skipping."
@@ -208,46 +189,20 @@ class Loader {
 	        }
 			if (claim.rank == "deprecated") {
 				// ignore deprecated claims for now
-				return
-			}
-			
-/*			// TODO: handle references
-			// TODO: we should distinguish between current data and past data by qualifiers
-			// TODO: handle ranks
-			if(claim.qualifiers && claim.qualifiers['P585']) {
-				// point in time qualifier - we should only record the last one
-				def claimTime = extractPropertyValueFromTime(claim.qualifiers['P585'][0]?.datavalue?.value?.time)
-				if(claimTime && (claimTime instanceof Date)) {
-					claim._time = claimTime
-					if(!currentClaim || currentClaim._time < claimTime) {
-						currentClaim = claim
-					}
-					// record this as past claim
-				} else {
-					println "${item.id}'s ${property} has quailifier P585 (point-in-time) but claim.qualifiers['P585'][0] does not parse as time.  Skipping."
-				}
-				addPastClaim(v, claim, isEdge, claimTime)
 				continue
 			}
-			// End date - if it's lower than now it's a past claim
-			// Note that if we don't have a value it's OK to pass it, we assume it's current
-			if(claim.qualifiers && claim.qualifiers['P582'] && claim.qualifiers['P582'][0]?.snaktype == 'value') {
-				def claimTime = extractPropertyValueFromTime(claim.qualifiers['P582'][0]?.datavalue?.value?.time)
-				addPastClaim(v, claim, isEdge, claimTime)
-				if(!claimTime || !(claimTime instanceof Date)) {
-					println "${item.id}'s ${property} has quailifier P582 but claim.qualifiers['P582'][0] does not parse as time.  Skipping."
-				}
-				if(claimTime < (new Date())) {
-					continue
-				}
-			}
-*/			updateClaim(v, claim, isEdge)
+			claimsById[claim.id] = claim
 		}
-/*		if(currentClaim) {
-			updater(v, currentClaim.mainsnak, currentClaim.qualifiers)
+	}
+	for(cl in v.out('claim')) {
+		if(!(cl.wikibaseId in claimsById)) {
+			println "Dropping old claim {$cl.wikibaseId}"
+			cl.remove()
 		}
-*/    }
-    // TODO cleanup extra outgoing edges
+	}
+	for(claim in claimsById) {
+		updateClaim(v, claim.value)
+	}
   }
 
   private boolean inferIsEdgeFromProperty(property) {
@@ -278,60 +233,107 @@ class Loader {
 		  }
 		  def qname = q.key
 		  for(qitem in q.value) {
-			  def value
-			  if(qitem.snaktype != "value") {
-				  value = qitem.snaktype
-			  } else {
-				  if(qitem.datatype == 'wikibase-item') {
-					  value = "Q"+qitem.datavalue?.value['numeric-id']
-				  } else {
-					  value = extractPropertyValueFromClaim(qitem)
+			  def outV = getTargetFromSnak(qitem)
+			  def value = extractPropertyValueFromClaim(qitem)
+			  def edge = item.addEdge(qname, outV)
+			  edge.edgeType = 'qualifier'
+			  if(value) {
+				  edge[getValueName(qname)] = value
+				  if(qitem.snaktype == 'value') {
+					  addAllValues(qitem.datavalue.value, qname, edge)
 				  }
 			  }
-			  item[getQualifierName(qname)] = value
 		  }
 	  }
   }
   
-  private void updateClaim(v, claim, isLink) {
+  private def getTargetFromSnak(data)
+  {
+      def outgoing
+      switch (data.snaktype) {
+      case 'value':
+  		if(data.datatype == 'wikibase-item') {
+  			outgoing = getOrCreateVertex('Q' + data.datavalue.value[ 'numeric-id' ])
+  		} else {
+  			outgoing = getOrCreateVertex(data.property)
+  		}
+        break
+      case 'somevalue':
+        outgoing = g.V('specialValueNode', 'unknown').next()
+        break
+      case 'novalue':
+        outgoing = g.V('specialValueNode', 'novalue').next()
+        break
+      default:
+        println "Unknown snaktype on ${v.wikibaseId}:  ${claim.snaktype}.  Skipping."
+        return null
+      }
+	  return outgoing
+  }
+  
+  private void addAllValues(datavalue, property, item)
+  {
+	  if(!(datavalue instanceof HashMap)) {
+		  return
+	  }
+	  for(it in datavalue) {
+		  if(!it.value) {
+			  continue
+		  }
+		  item[getValueName(property)+"_"+it.key] = it.value
+	  }
+  }
+  
+  private def updateClaim(v, claim) 
+  {
+  	def claimV = getOrCreateVertex(claim.id)
+  	if(claimV.stub) {
+  		// new one
+  		claimV.type = 'claim'
+  		claimV.stub = false
+  	} else {
+		//println "Skipping old claim ${claim.id}"
+  		// we already have this claim
+  		return
+  	}
+	//println "Adding claim ${claim.id}: $claim"
     // This claim is an edge so select the outoing edge:
-    def outgoing
+    def outgoing = getTargetFromSnak(claim.mainsnak)
+	if(!outgoing) {
+		return null
+	}
 	def data = claim.mainsnak
-	def value = null
-    switch (data.snaktype) {
-    case 'value':
-		if(data.datatype == 'wikibase-item') {
-			outgoing = getOrCreateVertex('Q' + data.datavalue.value[ 'numeric-id' ])
-		} else {
-	        value = extractPropertyValueFromClaim(data)
-	        if (value == null) {
-	          return
-	        }
-			outgoing = getOrCreateVertex(data.property)
+	def isValue = (claim.mainsnak.datatype != 'wikibase-item')
+	def value = extractPropertyValueFromClaim(data)
+
+	claimV['rank'] = (claim.rank == "preferred")
+	
+	def edgeIn = v.addEdge(data.property, claimV)
+	// Here is the strange thing: v.out() is slow but v.out('claim') is fast even though they return the same
+	// So we provide edge for all claims so we could fetch them e.g. for deleting old ones
+	v.addEdge('claim', claimV)
+	def edgeOut = claimV.addEdge(data.property, outgoing)
+	edgeOut.edgeType = 'claim'
+	if(isValue && value) {
+		// TODO: choose which one is better here
+		claimV[getValueName(data.property)] = value
+		edgeOut[getValueName(data.property)] = value
+		if(data.snaktype == 'value' && data.datatype != 'wikibase-item' && data.datatype != 'string') {
+			addAllValues(data.datavalue.value, data.property, claimV)
+			addAllValues(data.datavalue.value, data.property, edgeOut)
 		}
-      break
-    case 'somevalue':
-      outgoing = g.V('specialValueNode', 'unknown').next()
-      break
-    case 'novalue':
-      outgoing = g.V('specialValueNode', 'novalue').next()
-      break
-    default:
-      println "Unknown snaktype on ${v.wikibaseId}:  ${claim.snaktype}.  Skipping."
-      return
-    }
-	def edge = v.addEdge(data.property, outgoing)
-	edge['rank'] = (claim.rank == "preferred")
-	if(!isLink && value) {
-		edge[getValueName(data.property)] = value
 	}
     if(claim.qualifiers) {
 	  // println "Adding qualifiers to $edge"
-	  addQualifiers(edge, claim.qualifiers)
+	  addQualifiers(claimV, claim.qualifiers)
     }
+	return claimV
   }
 
   private def extractPropertyValueFromClaim(claim) {
+	  if (claim.snaktype != 'value') {
+		  return null
+	  }
     def value = claim.datavalue.value
 	try {
 	    switch (claim.datatype) {
@@ -342,6 +344,7 @@ class Loader {
 		    case 'string':           return value
 		    case 'time':             return extractPropertyValueFromTime(value.time)
 		    case 'url':              return value
+			case 'wikibase-item':    return null
 		    default:
 		      println "Unknown datatype on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype}.  Skipping."
 		      return null
