@@ -70,4 +70,10 @@ class ConsoleInit {
       def loader = new org.wikidata.gremlin.Loader(script.g, ignore_props)
 	  new DataLoader(loader).setReaders(procs).setNum(num).gzipFile(file).read(max)
   }
+  
+  void benchmark(Closure c) {
+	  def t = System.currentTimeMillis()
+	  c()
+	  println (System.currentTimeMillis() - t)
+  }
 }

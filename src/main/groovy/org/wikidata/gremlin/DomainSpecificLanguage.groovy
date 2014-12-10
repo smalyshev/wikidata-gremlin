@@ -31,6 +31,10 @@ class DomainSpecificLanguage {
     Pipe.metaClass.isA = { id ->
       delegate.out('P31').has('type', 'claim').out('P31').has('wikibaseId', id).hasNext()
     }
+    Gremlin.addStep('isOneOf')
+    Pipe.metaClass.isOneOf = { ids ->
+      delegate.out('P31').has('type', 'claim').out('P31').has('wikibaseId', T.in, ids).hasNext()
+    }
 	// Get claim edges for property - used for values
 	// this produces list of outgoing claim edges
     Gremlin.addStep('claimValues')
@@ -49,6 +53,12 @@ class DomainSpecificLanguage {
 	Pipe.metaClass.listOf = { 
 		delegate.V('wikibaseId', it).in('P31').has('type', 'claim').in('P31')
 	}
+	// Produces list of instances of the pipeline
+	// E.g. g.wd('Q5').instances() are humans
+	Gremlin.addStep('instances')
+	Pipe.metaClass.instances = { 
+		delegate.in('P31').has('type', 'claim').in('P31')
+	}
 	// if the list has elements ranked "preferred", take them, otherwise take all
 	// this produces list of claims
 	Gremlin.addStep('preferred')
@@ -58,18 +68,32 @@ class DomainSpecificLanguage {
 	
     Gremlin.addStep('toCountry')
     Pipe.metaClass.toCountry = {
+		delegate.as('loopstep').copySplit(
+			_().filter{it.isA('Q6256')},
+		 	_().claimVertices('P17'),
+			_().claimVertices('P131')
+		).exhaustMerge.dedup.refresh().loop('loopstep'){it.loops < 10 && !it.object.isA('Q6256')}
+	}
+	
+	Gremlin.addStep('namesList')
+	Pipe.metaClass.namesList = {
+		delegate.transform({[id: it.wikibaseId, name: it.labelEn]})
+	}
+/*
       // If this place _is_ a country the return it
-      delegate.as('next').ifThenElse{it.isA('Q6256')}{
+      delegate.as('loopstep').ifThenElse{}{
         it
       }{
         // If this place has a country then return that
         it.ifThenElse{it.out('P17').hasNext()}{
-          it.out('P17').refresh()
+          it.claimVertices('P17').refresh()
         }{
-          // Otherwise follow "is in the administrative territorial entity"
-          it.out('P131').refresh().loop('next'){it && it.loops < 10}
+            // Otherwise follow "is in the administrative territorial entity"
+            p = it.claimVertices('P131') //.refresh()
+            println p.toString()
+            p.loop('loopstep'){it && it.loops < 10}
         }
       }
-    }
+    }*/  
   }
 }

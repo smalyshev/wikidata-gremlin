@@ -33,11 +33,15 @@ class Schema {
 		def type = mgmt.makePropertyKey('type').dataType(String.class).make()
 		def etype = mgmt.makePropertyKey('edgeType').dataType(String.class).make()
 		mgmt.makePropertyKey('datatype').dataType(String.class).make()
-		mgmt.makePropertyKey('rank').dataType(Boolean.class).make()
+		def rank = mgmt.makePropertyKey('rank').dataType(Boolean.class).make()
 
         mgmt.buildIndex('by_specialValueNode',Vertex.class).addKey(specialValueNode).unique().buildCompositeIndex()
         mgmt.buildIndex('by_type',Vertex.class).addKey(type).buildCompositeIndex()
         mgmt.buildIndex('by_edgeType',Edge.class).addKey(type).buildCompositeIndex()
+		
+		// Special case
+		def claims = mgmt.makeEdgeLabel('claim').signature(edgeType, rank).make()
+		mgmt.buildEdgeIndex(claims, 'by_claims', Direction.BOTH, SortOrder.DESC, etype, rank)
     }
 /*    if (!mgmt.containsGraphIndex('by_type_and_label')) {
       println "Adding key and index for by_type_and_label"

@@ -4,6 +4,8 @@ package org.wikidata.gremlin
 
 import com.tinkerpop.blueprints.Graph
 import com.tinkerpop.blueprints.Vertex
+import com.tinkerpop.blueprints.Direction
+import com.thinkaurelius.titan.core.Order
 import java.text.SimpleDateFormat
 import com.thinkaurelius.titan.core.attribute.Geoshape
 
@@ -58,9 +60,11 @@ class Loader {
 		  return
 	  }
       def v = getOrCreateVertex(id)
+	  def isNew = false
 	  if(v['stub']) {
 		  v['stub'] = false
 		  println "Creating $id"
+		  isNew = true
 	  } else {
 		  println "Updating $id"
 	  }
@@ -68,8 +72,8 @@ class Loader {
 	  if(isProperty) {
     	  checkProperty(item)
       }
-      updateLabels(v, item)
-      updateClaims(v, item)
+      updateLabels(v, item, isNew)
+      updateClaims(v, item, isNew)
       v['type'] = item['type']
 	  if(item['datatype']) {
 		  v['datatype'] = item['datatype']
@@ -133,15 +137,17 @@ class Loader {
     return g.addVertex([wikibaseId: id, stub: true])
   }
 
-  private void updateLabels(v, item) 
+  private void updateLabels(v, item, isNew) 
   {
 	// clean labels that do not exist in item
 	/* TODO: for now, we just wipe the properties clean and reinstate them.
 	In the future, we might want to have more intelligent strategies for updates */
-	for(p in v.getProperties()) {
-		def l = p.getPropertyKey()?.getName();
-		if(l && l.length() > 5 && l[0..4] == 'label' && !(l in item.labels)) {
-			v.removeProperty(l)
+	if(!isNew) {
+		for(p in v.getProperties()) {
+			def l = p.getPropertyKey()?.getName();
+			if(l && l.length() > 5 && l[0..4] == 'label' && !(l in item.labels)) {
+				v.removeProperty(l)
+			}
 		}
 	}
     if (!item.labels) {
@@ -172,10 +178,7 @@ class Loader {
 */    
   }
 
-  private void updateClaims(v, item) {
-    if (!item.claims) {
-      return
-    }
+  private void updateClaims(v, item, isNew) {
 	def claimsById = [:]
     for (claimsOnProperty in item.claims) {
 		if(!claimsOnProperty.value.size()) {
@@ -194,12 +197,17 @@ class Loader {
 			claimsById[claim.id] = claim
 		}
 	}
-	for(cl in v.out('claim')) {
-		if(!(cl.wikibaseId in claimsById)) {
-			println "Dropping old claim {$cl.wikibaseId}"
-			cl.remove()
+	if(!isNew) {
+		for(cl in v.out('claim')) {
+			if(!(cl.wikibaseId in claimsById)) {
+				println "Dropping old claim {$cl.wikibaseId}"
+				cl.remove()
+			}
 		}
 	}
+    if (!item.claims) {
+      return
+    }
 	for(claim in claimsById) {
 		updateClaim(v, claim.value)
 	}
@@ -233,8 +241,8 @@ class Loader {
 		  }
 		  def qname = q.key
 		  for(qitem in q.value) {
-			  def outV = getTargetFromSnak(qitem)
 			  def value = extractPropertyValueFromClaim(qitem)
+			  def outV = getTargetFromSnak(qitem, value)
 			  def edge = item.addEdge(qname, outV)
 			  edge.edgeType = 'qualifier'
 			  if(value) {
@@ -247,15 +255,22 @@ class Loader {
 	  }
   }
   
-  private def getTargetFromSnak(data)
+  private def getTargetFromSnak(data, value)
   {
       def outgoing
       switch (data.snaktype) {
       case 'value':
+	  	
   		if(data.datatype == 'wikibase-item') {
   			outgoing = getOrCreateVertex('Q' + data.datavalue.value[ 'numeric-id' ])
   		} else {
-  			outgoing = getOrCreateVertex(data.property)
+			if(value == null) {
+				// if we are supposed to have a specific value, but could not find it
+				// we produce "somevalue" link instead
+				outgoing = g.V('specialValueNode', 'unknown').next()
+			} else {
+				outgoing = getOrCreateVertex(data.property)
+			}
   		}
         break
       case 'somevalue':
@@ -298,13 +313,13 @@ class Loader {
   	}
 	//println "Adding claim ${claim.id}: $claim"
     // This claim is an edge so select the outoing edge:
-    def outgoing = getTargetFromSnak(claim.mainsnak)
+	def data = claim.mainsnak
+	def isValue = (data.datatype != 'wikibase-item')
+	def value = extractPropertyValueFromClaim(data)
+    def outgoing = getTargetFromSnak(claim.mainsnak, value)
 	if(!outgoing) {
 		return null
 	}
-	def data = claim.mainsnak
-	def isValue = (claim.mainsnak.datatype != 'wikibase-item')
-	def value = extractPropertyValueFromClaim(data)
 
 	claimV['rank'] = (claim.rank == "preferred")
 	
@@ -375,7 +390,7 @@ class Loader {
 	int y = matches[0][1] as long
 	if(y < 0) {
 		// TODO: Java is not good with handling BC, need better solution
-		return "somevalue"
+		return null
 	}
 	//def df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
     //return df.parse(time) 
@@ -413,8 +428,11 @@ class Loader {
 		mgmt.rollback()
 		return
     }
+	def rank = mgmt.getPropertyKey("rank")
+	def edgeType = mgmt.getPropertyKey("edgeType")
     println "Creating edge $name."
-	mgmt.makeEdgeLabel(name).make()
+	def label = mgmt.makeEdgeLabel(name).signature(edgeType, rank).make()
+	mgmt.buildEdgeIndex(label, name, Direction.BOTH, SortOrder.DESC, edgeType, rank)
     // This does not commit the graph transaction - just the management one
     mgmt.commit()
   }
