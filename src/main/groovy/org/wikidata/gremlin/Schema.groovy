@@ -3,6 +3,8 @@ package org.wikidata.gremlin
 import com.tinkerpop.blueprints.Graph
 import com.tinkerpop.blueprints.Vertex
 import com.tinkerpop.blueprints.Edge
+import com.tinkerpop.blueprints.Direction
+import com.thinkaurelius.titan.core.Order
 
 // Apache 2 Licensed
 
@@ -19,39 +21,75 @@ class Schema {
       return
     }
     def mgmt = g.getManagementSystem()
-    if (!mgmt.containsGraphIndex('by_wikibaseId')) {
-      println "Adding key and index for wikibaseId"
-      def wikibaseId = mgmt.makePropertyKey('wikibaseId').dataType(String.class).make()
-      mgmt.buildIndex('by_wikibaseId',Vertex.class).addKey(wikibaseId).unique().buildCompositeIndex()
-    }
+	def wikibaseId = addProperty(mgmt, 'wikibaseId', String.class)
+	def vid = addProperty(mgmt, 'vid', String.class)
+	def type = addProperty(mgmt, 'type', String.class)
+	addProperty(mgmt, 'datatype', String.class)
+	addProperty(mgmt, 'stub', Boolean.class)
     // There are two nodes with the special_value_node parameter: 'unknown', 'no_value'.  They are used to
     // for vertex type properties that are unknown or known to have no value.
-    if (!mgmt.containsGraphIndex('by_specialValueNode')) {
-		println "Adding key and index for specialValueNode"
-	  	def specialValueNode = mgmt.makePropertyKey('specialValueNode').dataType(String.class).make()
-		mgmt.makePropertyKey('stub').dataType(Boolean.class).make()
-		def type = mgmt.makePropertyKey('type').dataType(String.class).make()
-		def etype = mgmt.makePropertyKey('edgeType').dataType(String.class).make()
-		mgmt.makePropertyKey('datatype').dataType(String.class).make()
-		def rank = mgmt.makePropertyKey('rank').dataType(Boolean.class).make()
+	def specialValueNode = addProperty(mgmt, 'specialValueNode', String.class)
+	// For edges
+	def prop = addProperty(mgmt, 'property', String.class)
+	def etype = addProperty(mgmt, 'edgeType', String.class)
+	def rank = addProperty(mgmt, 'rank', Boolean.class)
+	def claims = addEdgeLabel(mgmt, 'claim', prop, wikibaseId)
+	
+	addIndex(mgmt, 'by_wikibaseId', Vertex.class, [wikibaseId], true)
+	addIndex(mgmt, 'by_vid', Vertex.class, [vid], true)
+	addIndex(mgmt, 'by_specialValueNode', Vertex.class, [specialValueNode], true)
+	addIndex(mgmt, 'by_type', Vertex.class, [type])
+	addIndex(mgmt, 'by_etype', Edge.class, [etype])
+	addIndex(mgmt, 'by_prop', Edge.class, [prop])
+	
+	addVIndex(mgmt, claims, 'by_claims', wikibaseId, rank, prop)
+    mgmt.commit()
+  }
+  
+  def addProperty(mgmt, name, type) {
+	  def key = mgmt.getPropertyKey(name)
+	  if(key) {
+		  return key
+	  }
+	  println "Creating property $name"
+	  mgmt.makePropertyKey(name).dataType(type).make()
+  }
+  
+  def addEdgeLabel(mgmt, name, Object[] signature)
+  {
+	  def label = mgmt.getEdgeLabel(name);
+	  if(label) {
+		  return label
+	  }
+	  println "Creating label $name"
+	  mgmt.makeEdgeLabel(name).signature(*signature).make()
+  }
+  
+  def addIndex(mgmt, name, type, keys, unique = false)
+  {
+	  def idx = mgmt.getGraphIndex(name);
+	  if(idx) {
+		  return idx
+	  }
+	  println "Creating index $name"
+	  idx = mgmt.buildIndex(name, type)
+	  for(k in keys) {
+		  idx = idx.addKey(k)
+	  }
+	  if(unique) {
+		 idx = idx.unique()
+	  }
+	  idx.buildCompositeIndex()
+  }
 
-        mgmt.buildIndex('by_specialValueNode',Vertex.class).addKey(specialValueNode).unique().buildCompositeIndex()
-        mgmt.buildIndex('by_type',Vertex.class).addKey(type).buildCompositeIndex()
-        mgmt.buildIndex('by_edgeType',Edge.class).addKey(type).buildCompositeIndex()
-		
-		// Special case
-		def claims = mgmt.makeEdgeLabel('claim').signature(edgeType, rank).make()
-		mgmt.buildEdgeIndex(claims, 'by_claims', Direction.BOTH, SortOrder.DESC, etype, rank)
-    }
-/*    if (!mgmt.containsGraphIndex('by_type_and_label')) {
-      println "Adding key and index for by_type_and_label"
-      changed = true
-      def label = mgmt.makePropertyKey('labelEn').dataType(String.class).make()
-      def type = mgmt.makePropertyKey('type').dataType(String.class).make()
-      mgmt.buildIndex('by_type_and_label',Vertex.class).addKey(type).addKey(label).buildCompositeIndex()
-    }
-*/    
-      mgmt.commit()
+  def addVIndex(mgmt, label, name, Object[] keys)
+  {
+	  def idx = mgmt.getRelationIndex(label, name);
+	  if(idx) {
+		  return idx
+	  }
+	  println "Creating vertex index $name"
+	  mgmt.buildEdgeIndex(label, name, Direction.BOTH, Order.DESC, *keys)
   }
 
   def setupConstantData() {
