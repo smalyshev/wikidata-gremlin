@@ -16,6 +16,7 @@ class DataLoader {
 	private int myNum = 0
 	private boolean gzipped
 	private int skipLines = 0
+	private boolean failOnError = false
 	
 	DataLoader(Graph g, boolean ignore_props = false) {
 		this.g = g
@@ -51,6 +52,12 @@ class DataLoader {
 	public DataLoader setLines(int l) 
 	{
 		LINES_PER_COMMIT = l
+		return this
+	}
+	
+	public DataLoader failOnError(boolean f)
+	{
+		failOnError = f
 		return this
 	}
 	
@@ -101,6 +108,7 @@ class DataLoader {
 				println "Importing line ${stream.getLineNumber()} failed: $e"
 				rejects << line
 				rejects << "\n"
+				if(failOnError) { throw e; }
 			}
 			(0..numReaders-1).each() { line = stream.readLine() }
 			if(i != 0 && i % LINES_PER_COMMIT == 0) {

@@ -163,6 +163,9 @@ class Loader {
       return
     }
     for (label in item.labels) {
+		if(!label?.value?.value) {
+			continue;
+		}
 		def l = 'label' + label.key.capitalize()
       	try {
 			v[l] = label.value.value
@@ -240,6 +243,9 @@ class Loader {
 		  }
 		  def qname = getQualifierName(q.key)
 		  for(qitem in q.value) {
+			  if(!qitem) {
+				  continue;
+			  }
 			  def value = extractPropertyValueFromClaim(qitem)
 			  if(value) {
 				  item.setProperty(qname, value)
@@ -421,7 +427,7 @@ class Loader {
 	// P580 and P582 require special handling as a pair
 	//println "Processing ${claim.id} for ${claim.mainsnak.property}"
 	//println "Result is now ${result.size()}"
-	if(claim.qualifiers['P580']?.size() > 1 || claim.qualifiers['P582']?.size() > 1) {
+	if(claim.qualifiers['P580'] && claim.qualifiers['P582'] && (claim.qualifiers['P580']?.size() > 1 || claim.qualifiers['P582']?.size() > 1)) {
 		//println "Processing qualifiers P580/2"
 		order.removeAll(['P580', 'P582'])
 		newresult = []
@@ -429,7 +435,9 @@ class Loader {
 			for(r in result) {
 				newr = r.clone()
 				newr['P580'] = [claim.qualifiers['P580'][i]]
-				newr['P582'] = [claim.qualifiers['P582'][i]]
+				if(claim.qualifiers['P582'] && claim.qualifiers['P582'][i]) {
+					newr['P582'] = [claim.qualifiers['P582'][i]]
+				}
 				newresult << newr
 			}
 		}
