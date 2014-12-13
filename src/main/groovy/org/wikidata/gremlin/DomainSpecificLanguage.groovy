@@ -93,7 +93,7 @@ class DomainSpecificLanguage {
 			_().claimVertices('P131')
 		).exhaustMerge.dedup.refresh().loop('loopstep'){it.loops < 10 && !it.object.isA('Q6256')}
 	}
-	// Produce list of 
+	// Produce list of id-name pairs, mostly for human inspection
 	Gremlin.addStep('namesList')
 	Pipe.metaClass.namesList = {
 		delegate.transform({[id: it.wikibaseId, name: it.labelEn]})

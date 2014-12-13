@@ -10,9 +10,6 @@ import java.text.SimpleDateFormat
 import com.thinkaurelius.titan.core.attribute.Geoshape
 
 class Loader {
-  final String QUALIFIER_PROPERTY = "_qualifiers"
-  final String PAST_SUFFIX = "_all"
-	
   final Graph g
   boolean skip_props
   private def currentVertex
@@ -100,7 +97,7 @@ class Loader {
 		  case 'commonsMedia':     return String.class
 		  case 'globe-coordinate': return Geoshape.class
 		  // TODO: which class we have to use here? Maybe BigInteger?
-		  case 'quantity':         return long.class
+		  case 'quantity':         return String.class
 		  case 'time':             return Date.class
 		  default:
 		  	return Object.class
@@ -116,6 +113,11 @@ class Loader {
   {
 	  return itemName+"q"
   }
+  
+  public String getAllValuesName(itemName)
+  {
+	  return itemName+"_all"
+  }
 
   private void checkProperty(item)
   {	  
@@ -123,8 +125,15 @@ class Loader {
 	  initEdge(item['id'])
 	  // For value properties, we also need the value prop
 	  if(item['datatype'] && item['datatype'] != 'wikibase-item') {
-		  initProperty(getValueName(item['id']))
+		  initProperty(getValueName(item['id']), getDataType(item['datatype']))
+		  // for sub-values
+		  if(item['datatype'] != 'string') {
+			  initProperty(getAllValuesName(getValueName(item['id'])))
+			  initProperty(getAllValuesName(getQualifierName(item['id'])))
+		  }
 	  }
+
+	  initProperty(getQualifierName(item['id']), getDataType(item['datatype']))
   }
 
   private def getOrCreateVertex(id) 
@@ -158,7 +167,7 @@ class Loader {
       	try {
 			v[l] = label.value.value
 		} catch(java.lang.IllegalArgumentException e) {
-			initProperty(l, label.value.value.class)
+			initProperty(l, String.class)
 			v[l] = label.value.value
 		}
     }
@@ -198,40 +207,30 @@ class Loader {
 		}
 	}
 	if(!isNew) {
-		for(cl in v.out('claim')) {
+		for(cl in v.outE('claim')) {
 			if(!(cl.wikibaseId in claimsById)) {
 				println "Dropping old claim {$cl.wikibaseId}"
+				v.outE(cl.property).has('wikibaseId', cl.wikibaseId).remove()
 				cl.remove()
+			} else {
+				claimsById[cl.wikibaseId]['exists'] = true
 			}
 		}
 	}
+	// the check is here since even if item has no current claims
+	// we may want to delete old ones
     if (!item.claims) {
       return
     }
 	for(claim in claimsById) {
-		updateClaim(v, claim.value)
+		if(claim.value['exists']) {
+			// already added
+			continue
+		}
+		for(eclaim in expand(claim.value)) {
+			updateClaim(v, eclaim)
+		}
 	}
-  }
-
-  private boolean inferIsEdgeFromProperty(property) {
-	  def relationType = g.getRelationType(property)
-      if (relationType) {
-        return relationType.isEdgeLabel()
-      }
-	def prop = g.V('wikibaseId', property)
-	// This should never happen if we do import properly, e.g.
-	// 1. Extract properties
-	// 2. Import properties
-	// 3. Import non-property data
-	// But if we mess up, we have a fallback here
-	if(!prop) {
-		println "Asking wikidata about $property."
-		refreshWikidataItem(property)
-		prop = g.V('wikibaseId', property).next()
-	} else {
-		prop = prop.next()
-	}
-    return prop['datatype'] == 'wikibase-item'
   }
 
   private void addQualifiers(item, qualifiers) {
@@ -239,16 +238,13 @@ class Loader {
 		  if(!q.value) {
 			  continue
 		  }
-		  def qname = q.key
+		  def qname = getQualifierName(q.key)
 		  for(qitem in q.value) {
 			  def value = extractPropertyValueFromClaim(qitem)
-			  def outV = getTargetFromSnak(qitem, value)
-			  def edge = item.addEdge(qname, outV)
-			  edge.edgeType = 'qualifier'
 			  if(value) {
-				  edge[getValueName(qname)] = value
-				  if(qitem.snaktype == 'value') {
-					  addAllValues(qitem.datavalue.value, qname, edge)
+				  item.setProperty(qname, value)
+				  if(qitem.datatype != 'wikibase-item' && qitem.datatype != 'string') {
+					  addAllValues(qitem.datavalue.value, qname, item)
 				  }
 			  }
 		  }
@@ -291,61 +287,53 @@ class Loader {
 	  if(!(datavalue instanceof HashMap)) {
 		  return
 	  }
+	  def v = [:]
 	  for(it in datavalue) {
 		  if(!it.value) {
 			  continue
 		  }
-		  item[getValueName(property)+"_"+it.key] = it.value
+		  //item[getValueName(property)+"_"+it.key] = it.value
+		  v[it.key] = it.value
 	  }
+	  item.setProperty(getAllValuesName(property), v)
   }
   
   private def updateClaim(v, claim) 
   {
-  	def claimV = getOrCreateVertex(claim.id)
-  	if(claimV.stub) {
-  		// new one
-  		claimV.type = 'claim'
-  		claimV.stub = false
-  	} else {
-		//println "Skipping old claim ${claim.id}"
-  		// we already have this claim
-  		return
-  	}
-	//println "Adding claim ${claim.id}: $claim"
-    // This claim is an edge so select the outoing edge:
 	def data = claim.mainsnak
-	def isValue = (data.datatype != 'wikibase-item')
 	def value = extractPropertyValueFromClaim(data)
-    def outgoing = getTargetFromSnak(claim.mainsnak, value)
-	if(!outgoing) {
-		return null
-	}
+	def outgoing = getTargetFromSnak(claim.mainsnak, value)
+	def isValue = (data.datatype != 'wikibase-item')
 
-	claimV['rank'] = (claim.rank == "preferred")
-	
-	def edgeIn = v.addEdge(data.property, claimV)
+  	if(!outgoing) {
+  		return null
+  	}
+	  
+	def claimE = v.addEdge(data.property, outgoing)
 	// Here is the strange thing: v.out() is slow but v.out('claim') is fast even though they return the same
 	// So we provide edge for all claims so we could fetch them e.g. for deleting old ones
-	v.addEdge('claim', claimV)
-	def edgeOut = claimV.addEdge(data.property, outgoing)
-	edgeOut.edgeType = 'claim'
+	def claimC = v.addEdge('claim', outgoing)
+	claimE.setProperty('edgeType', 'claim')
+	claimE.setProperty('rank', claim.rank == "preferred")
+	claimE.setProperty('wikibaseId', claim.id)
+	claimC.setProperty('wikibaseId', claim.id)
+	claimC.setProperty('property', data.property)
+	
 	if(isValue && value) {
 		// TODO: choose which one is better here
-		claimV[getValueName(data.property)] = value
-		edgeOut[getValueName(data.property)] = value
-		if(data.snaktype == 'value' && data.datatype != 'wikibase-item' && data.datatype != 'string') {
-			addAllValues(data.datavalue.value, data.property, claimV)
-			addAllValues(data.datavalue.value, data.property, edgeOut)
+		claimE.setProperty(getValueName(data.property), value)
+		if(data.datatype != 'string') {
+			addAllValues(data.datavalue.value, getValueName(data.property), claimE)
 		}
 	}
     if(claim.qualifiers) {
 	  // println "Adding qualifiers to $edge"
-	  addQualifiers(claimV, claim.qualifiers)
+	  addQualifiers(claimE, claim.qualifiers)
     }
-	return claimV
+	return claimE
   }
 
-  private def extractPropertyValueFromClaim(claim) {
+  private def extractPropertyValueFromClaim(claim, allowLink = false) {
 	  if (claim.snaktype != 'value') {
 		  return null
 	  }
@@ -359,7 +347,7 @@ class Loader {
 		    case 'string':           return value
 		    case 'time':             return extractPropertyValueFromTime(value.time)
 		    case 'url':              return value
-			case 'wikibase-item':    return null
+			case 'wikibase-item':    return allowLink?"Q"+value['numeric-id']:null
 		    default:
 		      println "Unknown datatype on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype}.  Skipping."
 		      return null
@@ -397,43 +385,77 @@ class Loader {
 	Date.parse("yyyy-MM-dd HH:mm:ss", "$y-${matches[0][2]}-${matches[0][3]} ${matches[0][4]}:${matches[0][5]}:${matches[0][6]}") 
   }
 
-  private def initProperty(name, dataType=Object.class) {
-    // We use supportsTransactions as a standin for supporting getManagementSystem.....
-    if (!g.getFeatures().supportsTransactions) {
-      return
-    }
-    def mgmt = g.getManagementSystem()
-    def propertyKey = mgmt.getPropertyKey(name);
-    if (propertyKey != null) {
-		mgmt.rollback()
-		return
-    }
-    println "Creating property $name."
-    propertyKey = mgmt.makePropertyKey(name).dataType(dataType).make()
-    // def indexName = "by_${name}"
-    /* TODO: we should use a mixed index here to support range queries but those need Elasticsearch
-    //mgmt.buildIndex(indexName, Vertex.class).addKey(propertyKey).buildCompositeIndex()
-    // This does not commit the graph transaction - just the management one */
-    mgmt.commit()
+  private def initProperty(name, dataType=Object.class) 
+  {
+	  def s = new Schema(g)
+	  def mgmt = g.getManagementSystem()
+	  s.addProperty(mgmt, name, dataType)
+      /* TODO: we should use a mixed index here to support range queries but those need Elasticsearch */
+      //mgmt.buildIndex(indexName, Vertex.class).addKey(propertyKey).buildCompositeIndex()
+      mgmt.commit()
   }
 
-  private def initEdge(name) {
-    // We use supportsTransactions as a standin for supporting getManagementSystem.....
-    if (!g.getFeatures().supportsTransactions) {
-      return
-    }
-    def mgmt = g.getManagementSystem()
-    def edgeKey = mgmt.getEdgeLabel(name);
-    if (edgeKey != null) {
-		mgmt.rollback()
-		return
-    }
-	def rank = mgmt.getPropertyKey("rank")
-	def edgeType = mgmt.getPropertyKey("edgeType")
-    println "Creating edge $name."
-	def label = mgmt.makeEdgeLabel(name).signature(edgeType, rank).make()
-	mgmt.buildEdgeIndex(label, name, Direction.BOTH, SortOrder.DESC, edgeType, rank)
-    // This does not commit the graph transaction - just the management one
-    mgmt.commit()
+  private def initEdge(name) 
+  {
+	  def s = new Schema(g)
+	  def mgmt = g.getManagementSystem()
+	  def wikibaseId = s.addProperty(mgmt, 'wikibaseId', String.class)
+	  def rank = s.addProperty(mgmt, 'rank', Boolean.class)
+	  def label = s.addEdgeLabel(mgmt, name, rank, wikibaseId)
+	  
+	  s.addVIndex(mgmt, label, "by_"+name, wikibaseId, rank)
+      /* TODO: we should use a mixed index here to support range queries but those need Elasticsearch */
+      //mgmt.buildIndex(indexName, Vertex.class).addKey(propertyKey).buildCompositeIndex()
+      mgmt.commit()
+  }
+  
+  public def expand(claim) 
+  {
+  	if(!claim.qualifiers) {
+		return [claim]
+	}
+  	def result = [claim.qualifiers]
+	def newresult
+	def newr
+	def order = claim['qualifiers-order'].clone()
+	// P580 and P582 require special handling as a pair
+	//println "Processing ${claim.id} for ${claim.mainsnak.property}"
+	//println "Result is now ${result.size()}"
+	if(claim.qualifiers['P580']?.size() > 1 || claim.qualifiers['P582']?.size() > 1) {
+		//println "Processing qualifiers P580/2"
+		order.removeAll(['P580', 'P582'])
+		newresult = []
+		for(i in 0..<claim.qualifiers['P580'].size()) {
+			for(r in result) {
+				newr = r.clone()
+				newr['P580'] = [claim.qualifiers['P580'][i]]
+				newr['P582'] = [claim.qualifiers['P582'][i]]
+				newresult << newr
+			}
+		}
+		result = newresult
+		//println "Result is now ${result.size()}"
+	}
+  	for(qual in order) {
+		//println "Processing qualifier $qual"
+  		newresult = []
+  		for(qitem in claim.qualifiers[qual]) {
+  			for(r in result) {
+  				newr = r.clone()
+  				newr[qual] = [qitem]
+  				newresult << newr
+  			}
+  		}
+  		result = newresult
+		//println "Result is now ${result.size()}"
+  	}
+  	if(result.size() == 1) {
+		return [claim]
+	}
+	result.collect{
+		def cit = claim.clone()
+		cit.qualifiers = it
+		cit
+	}
   }
 }

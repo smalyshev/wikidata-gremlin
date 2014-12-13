@@ -76,4 +76,23 @@ class ConsoleInit {
 	  c()
 	  println (System.currentTimeMillis() - t)
   }
+  
+  void test () {
+	  script.g.V('vid', 0).remove()
+	  script.g.V('vid', 1).remove()
+	  def v0 = script.g.addVertex([vid: 0, type: 'start'])
+	  def random = new Random()
+	  for(i in 1..10000000) {
+	  	def v = script.g.addVertex([vid: i, type: 'claim'])
+	  	v.addEdge('is-a', v0)
+		def n = random.nextInt(i)
+		def vr = script.g.V('vid', n).next()
+		//println "$n: $vr"
+	  	v.addEdge('test', vr)
+	  	if (i%10000 == 0) {
+	  		println "Done $i"
+			script.g.commit()
+	  	}
+	  }
+  }
 }
