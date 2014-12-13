@@ -10,9 +10,6 @@ import java.text.SimpleDateFormat
 import com.thinkaurelius.titan.core.attribute.Geoshape
 
 class Loader {
-  final String QUALIFIER_PROPERTY = "_qualifiers"
-  final String PAST_SUFFIX = "_all"
-	
   final Graph g
   boolean skip_props
   private def currentVertex
@@ -100,7 +97,7 @@ class Loader {
 		  case 'commonsMedia':     return String.class
 		  case 'globe-coordinate': return Geoshape.class
 		  // TODO: which class we have to use here? Maybe BigInteger?
-		  case 'quantity':         return long.class
+		  case 'quantity':         return String.class
 		  case 'time':             return Date.class
 		  default:
 		  	return Object.class
@@ -123,7 +120,7 @@ class Loader {
 	  initEdge(item['id'])
 	  // For value properties, we also need the value prop
 	  if(item['datatype'] && item['datatype'] != 'wikibase-item') {
-		  initProperty(getValueName(item['id']))
+		  initProperty(getValueName(item['id']), getDataType(item['datatype']))
 	  }
   }
 
@@ -398,19 +395,9 @@ class Loader {
   }
 
   private def initProperty(name, dataType=Object.class) {
-    // We use supportsTransactions as a standin for supporting getManagementSystem.....
-    if (!g.getFeatures().supportsTransactions) {
-      return
-    }
+	def s = new Schema(g)
     def mgmt = g.getManagementSystem()
-    def propertyKey = mgmt.getPropertyKey(name);
-    if (propertyKey != null) {
-		mgmt.rollback()
-		return
-    }
-    println "Creating property $name."
-    propertyKey = mgmt.makePropertyKey(name).dataType(dataType).make()
-    // def indexName = "by_${name}"
+	s.addProperty(mgmt, name, dataType)
     /* TODO: we should use a mixed index here to support range queries but those need Elasticsearch
     //mgmt.buildIndex(indexName, Vertex.class).addKey(propertyKey).buildCompositeIndex()
     // This does not commit the graph transaction - just the management one */
@@ -418,21 +405,14 @@ class Loader {
   }
 
   private def initEdge(name) {
-    // We use supportsTransactions as a standin for supporting getManagementSystem.....
-    if (!g.getFeatures().supportsTransactions) {
-      return
-    }
+  	def s = new Schema(g)
     def mgmt = g.getManagementSystem()
-    def edgeKey = mgmt.getEdgeLabel(name);
-    if (edgeKey != null) {
-		mgmt.rollback()
-		return
-    }
-	def rank = mgmt.getPropertyKey("rank")
-	def edgeType = mgmt.getPropertyKey("edgeType")
-    println "Creating edge $name."
-	def label = mgmt.makeEdgeLabel(name).signature(edgeType, rank).make()
-	mgmt.buildEdgeIndex(label, name, Direction.BOTH, SortOrder.DESC, edgeType, rank)
+    def wikibaseId = s.addProperty(mgmt, 'wikibaseId', String.class)
+    def rank = s.addProperty(mgmt, 'rank', Boolean.class)
+    def edgeType = s.addProperty(mgmt, 'edgeType', String.class)
+    def label = s.addEdgeLabel(mgmt, name, rank, wikibaseId, edgeType)
+
+    s.addVIndex(mgmt, label, "by_"+name, wikibaseId, rank, edgeType)
     // This does not commit the graph transaction - just the management one
     mgmt.commit()
   }
