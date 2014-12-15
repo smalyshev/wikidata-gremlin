@@ -119,6 +119,11 @@ class Loader {
 	  return itemName+"_all"
   }
 
+  public String getLinkName(itemName)
+  {
+	  return itemName+"link"
+  }
+
   private void checkProperty(item)
   {	  
 	  // According to new data model, all claims are edges
@@ -213,7 +218,7 @@ class Loader {
 		for(cl in v.outE('claim')) {
 			if(!(cl.wikibaseId in claimsById)) {
 				println "Dropping old claim {$cl.wikibaseId}"
-				v.outE(cl.property).has('wikibaseId', cl.wikibaseId).remove()
+				v.outE(cl.getProperty('property')).has('wikibaseId', cl.wikibaseId).remove()
 				cl.remove()
 			} else {
 				claimsById[cl.wikibaseId]['exists'] = true
@@ -325,6 +330,12 @@ class Loader {
 	claimC.setProperty('wikibaseId', claim.id)
 	claimC.setProperty('property', data.property)
 	
+	if(!isValue && outgoing.wikibaseId) {
+  	  // Create reverse index for edges to allow faster reverse lookups for queries like "get all humans"
+  	  // See discussion: https://groups.google.com/forum/#!topic/aureliusgraphs/-3QQIWaT2H8
+		v.setProperty(getLinkName(data.property), outgoing.wikibaseId)
+	}
+	
 	if(isValue && value) {
 		// TODO: choose which one is better here
 		claimE.setProperty(getValueName(data.property), value)
@@ -410,8 +421,10 @@ class Loader {
 	  def label = s.addEdgeLabel(mgmt, name, rank, wikibaseId)
 	  
 	  s.addVIndex(mgmt, label, "by_"+name, wikibaseId, rank)
-      /* TODO: we should use a mixed index here to support range queries but those need Elasticsearch */
-      //mgmt.buildIndex(indexName, Vertex.class).addKey(propertyKey).buildCompositeIndex()
+	  // Create reverse index for edges to allow faster reverse lookups for queries like "get all humans"
+	  // See discussion: https://groups.google.com/forum/#!topic/aureliusgraphs/-3QQIWaT2H8
+	  def prop = mgmt.makePropertyKey(getLinkName(name)).dataType(String.class).cardinality(Cardinality.SET).make()
+      mgmt.buildIndex("by_"+getLinkName(name), Vertex.class).addKey(prop).buildCompositeIndex()
       mgmt.commit()
   }
   
