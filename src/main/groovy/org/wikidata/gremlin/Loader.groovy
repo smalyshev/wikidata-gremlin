@@ -8,6 +8,7 @@ import com.tinkerpop.blueprints.Direction
 import com.thinkaurelius.titan.core.Order
 import java.text.SimpleDateFormat
 import com.thinkaurelius.titan.core.attribute.Geoshape
+import com.thinkaurelius.titan.core.Cardinality
 
 class Loader {
   final Graph g
@@ -330,16 +331,16 @@ class Loader {
 	claimC.setProperty('wikibaseId', claim.id)
 	claimC.setProperty('property', data.property)
 	
-	if(!isValue && outgoing.wikibaseId) {
+	if(!isValue && outgoing.wikibaseId && !v.getProperties(getLinkName(data.property)).any{it.getValue() == outgoing.wikibaseId}) {
   	  // Create reverse index for edges to allow faster reverse lookups for queries like "get all humans"
   	  // See discussion: https://groups.google.com/forum/#!topic/aureliusgraphs/-3QQIWaT2H8
-		v.setProperty(getLinkName(data.property), outgoing.wikibaseId)
+		v.addProperty(getLinkName(data.property), outgoing.wikibaseId)
 	}
 	
 	if(isValue && value) {
 		// TODO: choose which one is better here
 		claimE.setProperty(getValueName(data.property), value)
-		if(data.datatype != 'string') {
+		if(data.datatype != 'string' ) {
 			addAllValues(data.datavalue.value, getValueName(data.property), claimE)
 		}
 	}
