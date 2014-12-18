@@ -55,7 +55,7 @@ class DataLoader {
 		return this
 	}
 	
-	public DataLoader failOnError(boolean f)
+	public DataLoader failOnError(boolean f=true)
 	{
 		failOnError = f
 		return this
@@ -124,6 +124,7 @@ class DataLoader {
 	
 	public void processClaims(max, Closure c) {
 		initStream()
+		initRejects()
 		def json = new JsonSlurper() //.setType(JsonParserType.INDEX_OVERLAY )
 		String line = stream.readLine()
 		if(line[0] == '[') {
@@ -142,12 +143,12 @@ class DataLoader {
    				line = line[0..-2]
    		 	}
 			
-			try {
-				def item = json.parseText(line)
-	   		 	if(!item) {
+			def item = json.parseText(line)
+   		 	if(!item) {
 	   			 break
-	   		 	}
-	   		 	for (claimsOnProperty in item.claims) {
+   		 	}
+			c(item, g, i)
+/*	   		 	for (claimsOnProperty in item.claims) {
 					if(!claimsOnProperty.value.size()) {
 						// empty claim, ignore
 						continue
@@ -159,10 +160,7 @@ class DataLoader {
 						c(claim)
 					}
 				}
-			} catch(e) {
-				println "Processing line ${stream.getLineNumber()} failed: $e"
-				throw e
-			}
+*/
 			(0..numReaders-1).each() { line = stream.readLine() }
 			if(i != 0 && i % LINES_PER_COMMIT == 0) {
 				println "Processed row $i"

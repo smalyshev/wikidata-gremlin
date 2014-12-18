@@ -2,9 +2,42 @@ package org.wikidata.gremlin
 
 import com.tinkerpop.gremlin.groovy.Gremlin
 import com.tinkerpop.blueprints.Graph
-import com.tinkerpop.pipes.Pipe
+import com.tinkerpop.blueprints.Vertex
+import com.tinkerpop.pipes.AbstractPipe;
+import com.tinkerpop.pipes.Pipe;
+import com.tinkerpop.pipes.transform.TransformPipe;
 import org.apache.commons.lang.RandomStringUtils
 // Apache 2 Licensed
+
+public class TreeOutPipe2 extends AbstractPipe<Vertex,Vertex> implements TransformPipe<Vertex, Vertex> {
+	private Pipe subtree = null;
+	private String[] props;
+
+	public TreeOutPipe(final String... props) {
+		if(!props) {
+			throw new RuntimeException("Property list should not be empty")
+		}
+		this.props = props
+	}
+
+	public Vertex processNextStart() throws NoSuchElementException {
+		if(!subtree) {
+			def v = this.starts.next()
+			def mark = RandomStringUtils.random(10, true, true)
+			subtree = v._().as(mark).out(*outs).loop(mark){it.object.out(*outs).hasNext()}{true}.dedup()
+			return v
+		} else {
+			return subtree.next();
+		}
+	}
+}
+
+public class WordLengthPipe2 extends AbstractPipe<String, Integer> implements TransformPipe<String,Integer> {
+	public Integer processNextStart() {
+	  String start = this.starts.next();
+	  return start.length();
+	}
+}
 
 class DomainSpecificLanguage {
   final Loader loader
@@ -14,6 +47,9 @@ class DomainSpecificLanguage {
   }
 
   void setup() {
+	Pipe.metaClass.randomMark = {
+		RandomStringUtils.random(10, true, true)
+	}
     Gremlin.addStep('wd')
     Graph.metaClass.wd = { id ->
       loader.byId(id)
@@ -29,11 +65,17 @@ class DomainSpecificLanguage {
     }
     Gremlin.addStep('isA')
     Pipe.metaClass.isA = { id ->
-      delegate.out('P31').has('wikibaseId', id).hasNext()
+      delegate.has('P31link', id).hasNext()
+    }
+    Vertex.metaClass.isA = { id ->
+    	id in delegate.P31link
     }
     Gremlin.addStep('isOneOf')
     Pipe.metaClass.isOneOf = { ids ->
-      delegate.out('P31').has('wikibaseId', T.in, ids).hasNext()
+      delegate.has('P31link', T.in, ids).hasNext()
+    }
+    Vertex.metaClass.isOneOf = { ids ->
+		ids.intersect(delegate.P31link) != []
     }
 	// Get claim edges for property - used for values
 	// this produces list of outgoing claim edges
@@ -50,19 +92,19 @@ class DomainSpecificLanguage {
 	// Produces list of entities that are instances of this class
 	// E.g. g.listOf('Q5') are humans
 	Gremlin.addStep('listOf')
-	Pipe.metaClass.listOf = { 
-		delegate.V('wikibaseId', it).in('P31')
+	Pipe.metaClass.listOf = {
+		delegate.V('P31link', it)
 	}
 	// Produces list of instances of the pipeline
 	// E.g. g.wd('Q5').instances() are humans
 	Gremlin.addStep('instances')
-	Pipe.metaClass.instances = { 
+	Pipe.metaClass.instances = {
 		delegate.in('P31')
 	}
 	// if the list has elements ranked "preferred", take them, otherwise take all
 	// this produces list of claims
 	Gremlin.addStep('preferred')
-	Pipe.metaClass.preferred = { 
+	Pipe.metaClass.preferred = {
 		delegate.ifThenElse{it.has('rank', true).hasNext()}{it.has('rank', true)}{it}
 	}
 	// produce 'current' value among the set of properties
@@ -77,8 +119,8 @@ class DomainSpecificLanguage {
 	// Returns claim nodes with the latest data
 	// Uses P585 (point in time)
 	Gremlin.addStep('latest')
-	Pipe.metaClass.latest = { 
-		def mark = RandomStringUtils.random(10, true, true)
+	Pipe.metaClass.latest = {
+		def mark =
 		delegate.copySplit(
 			_().filter{!it['P585q']}, // does not have PiT
 			_().order{it.b.P585q <=> it.a.P585q}[0]
@@ -88,11 +130,22 @@ class DomainSpecificLanguage {
 	// g.wd('Q1013639').toCountry() returns vertex for Q33/Finland
     Gremlin.addStep('toCountry')
     Pipe.metaClass.toCountry = {
-		def mark = RandomStringUtils.random(10, true, true)
+		def mark = delegate.randomMark()
 		delegate.ifThenElse{it.isA('Q6256')}{it}{
-			it.as(mark).out('P17', 'P131').refresh().loop(mark){it.loops < 10 && !it.object.isA('Q6256')}.dedup
+			it.as(mark).out('P17', 'P131').refresh().loop(mark){it.loops < 20 && !it.object.isA('Q6256') && it.object.out('P17', 'P131').hasNext() }.filter{it.isA('Q6256')}.dedup()
 		}
 	}
+	Gremlin.defineStep('treeOut', [Pipe, Vertex], { String... props -> new TreePipe(TreePipe.Direction.OUT, *props) })
+	Gremlin.defineStep('treeIn', [Pipe, Vertex], { String... props -> new TreePipe(TreePipe.Direction.IN, *props) })
+	// Dump the data to a JSON file
+	// this returns null so not chainable
+	Gremlin.addStep('dump')
+	Pipe.metaClass.dump = { String filename, String... props ->
+		def q = new QueryEngine()
+		q.dump(filename, delegate, *props)
+		null
+	}
+
 	// Produce list of id-name pairs, mostly for human inspection
 	Gremlin.addStep('namesList')
 	Pipe.metaClass.namesList = {

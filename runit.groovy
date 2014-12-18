@@ -9,3 +9,4 @@ groovy.grape.Grape.grab(group:'org.wikidata', module:'gremlin', version:'0.0.1-S
 w = org.wikidata.gremlin.ConsoleInit.init(this)
 propLoader = new org.wikidata.gremlin.DataLoader(g, false)
 dataLoader = new org.wikidata.gremlin.DataLoader(g, true)
+q = new org.wikidata.gremlin.QueryEngine(g)
