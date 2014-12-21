@@ -65,18 +65,34 @@ class ConsoleInit {
     def dsl = new org.wikidata.gremlin.DomainSpecificLanguage(loader)
     dsl.setup()
   }
-  
+
   static void loadData(script, max, procs, num, file, ignore_props=true) {
       def loader = new org.wikidata.gremlin.Loader(script.g, ignore_props)
 	  new DataLoader(loader).setReaders(procs).setNum(num).gzipFile(file).read(max)
   }
-  
+
   void benchmark(Closure c) {
 	  def t = System.currentTimeMillis()
 	  c()
 	  println (System.currentTimeMillis() - t)
   }
-  
+
+  void measure(int ntimes, Closure c) {
+	  def i = 0
+	  def res = []
+	  5.times {
+		  def t = System.currentTimeMillis()
+		  ntimes.times c
+		  res[i] = (System.currentTimeMillis() - t)
+		  i++
+		  println i
+	  }
+	  def avg = res.sum() / res.size()
+	  println res
+	  println "Average: $avg"
+	  println "Time: ${avg/ntimes} ms"
+  }
+
   void test () {
 	  script.g.V('vid', 0).remove()
 	  script.g.V('vid', 1).remove()

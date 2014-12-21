@@ -36,7 +36,7 @@ public class TreePipe extends AbstractPipe<Vertex,Vertex> implements TransformPi
 			String dirCall = ((dir == Direction.IN)?"in":"out")+"('"+propsList+"')";
 			String groovy = String.format("_().as('x').%s.loop('x'){it.object.%s.hasNext()}{true}.dedup()",
 					dirCall, dirCall);
-			System.out.println(groovy);
+			//System.out.println(groovy);
 			subtree = Gremlin.compile(groovy);
 			subtree.setStarts(new SingleIterator<Vertex>(v));
 			return v;

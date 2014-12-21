@@ -34,18 +34,23 @@ class Schema {
 	def etype = addProperty(mgmt, 'edgeType', String.class)
 	def rank = addProperty(mgmt, 'rank', Boolean.class)
 	def claims = addEdgeLabel(mgmt, 'claim', prop, wikibaseId)
-	
+	def hash = addProperty(mgmt, "contentHash", String.class)
+
 	addIndex(mgmt, 'by_wikibaseId', Vertex.class, [wikibaseId], true)
+	addIndex(mgmt, 'by_wikibaseIdE', Edge.class, [wikibaseId]) // may not be needed
 	addIndex(mgmt, 'by_vid', Vertex.class, [vid], true)
 	addIndex(mgmt, 'by_specialValueNode', Vertex.class, [specialValueNode], true)
 	addIndex(mgmt, 'by_type', Vertex.class, [type])
 	addIndex(mgmt, 'by_etype', Edge.class, [etype])
 	addIndex(mgmt, 'by_prop', Edge.class, [prop])
-	
+	//addIndex(mgmt, 'by_hash', Vertex.class, [hash]) //? may not be needed
+	addIndex(mgmt, 'by_Ehash', Edge.class, [hash])
+
+	// ???
 	addVIndex(mgmt, claims, 'by_claims', wikibaseId, rank, prop)
     mgmt.commit()
   }
-  
+
   def addProperty(mgmt, name, type) {
 	  def key = mgmt.getPropertyKey(name)
 	  if(key) {
@@ -54,7 +59,7 @@ class Schema {
 	  println "Creating property $name"
 	  mgmt.makePropertyKey(name).dataType(type).make()
   }
-  
+
   def addEdgeLabel(mgmt, name, Object[] signature)
   {
 	  def label = mgmt.getEdgeLabel(name);
@@ -64,7 +69,7 @@ class Schema {
 	  println "Creating label $name"
 	  mgmt.makeEdgeLabel(name).signature(*signature).make()
   }
-  
+
   def addIndex(mgmt, name, type, keys, unique = false)
   {
 	  def idx = mgmt.getGraphIndex(name);
