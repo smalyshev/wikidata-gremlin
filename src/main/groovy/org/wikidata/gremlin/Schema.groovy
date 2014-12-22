@@ -26,6 +26,7 @@ class Schema {
 	def type = addProperty(mgmt, 'type', String.class)
 	addProperty(mgmt, 'datatype', String.class)
 	addProperty(mgmt, 'stub', Boolean.class)
+	addProperty(mgmt, 'lastrevid', Integer.class)
     // There are two nodes with the special_value_node parameter: 'unknown', 'no_value'.  They are used to
     // for vertex type properties that are unknown or known to have no value.
 	def specialValueNode = addProperty(mgmt, 'specialValueNode', String.class)

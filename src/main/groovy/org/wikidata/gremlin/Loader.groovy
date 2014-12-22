@@ -67,6 +67,10 @@ class Loader {
 		  println "Creating $id"
 		  isNew = true
 	  } else {
+	  	if(v['lastrevid'] && v['lastrevid'] > item['lastrevid']) {
+			  println "Ignoring update for $id - it's rev ${item['lastrevid']} and we already have ${v['lastrevid']}"
+			  return
+		  }
 		  println "Updating $id"
 	  }
 	  currentVertex = v
@@ -78,6 +82,9 @@ class Loader {
       v['type'] = item['type']
 	  if(item['datatype']) {
 		  v['datatype'] = item['datatype']
+	  }
+	  if(item['lastrevid']) {
+		  v['lastrevid'] = item['lastrevid']
 	  }
   	  if(isProperty) {
 			g.commit()
