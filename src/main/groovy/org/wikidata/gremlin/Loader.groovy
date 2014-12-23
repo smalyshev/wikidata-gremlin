@@ -482,7 +482,7 @@ class Loader {
 		  // Dates currently not supported by Titan mixed indexes
 		  if(Schema.USE_ELASTIC && label && dataType != Date.class) {
 			  def index = mgmt.getGraphIndex('by_values')
-			  mgmt.addIndexKey(index, prop)
+			  mgmt.addIndexKey(index, prop, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',name))
 		  }
 	  }
       mgmt.commit()
@@ -515,7 +515,7 @@ class Loader {
 	  s.addIndex(mgmt, "by_"+linkName, Vertex.class, [prop])
 	  if(Schema.USE_ELASTIC) {
 		  def mindex = mgmt.getGraphIndex('by_links')
-		  mgmt.addIndexKey(mindex, prop2)
+		  mgmt.addIndexKey(mindex, prop2, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',linkName+"_"))
 	  }
 
       mgmt.commit()

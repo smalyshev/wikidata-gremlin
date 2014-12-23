@@ -10,7 +10,7 @@ import com.thinkaurelius.titan.core.Order
 
 class Schema {
   final Graph g
-  public final USE_ELASTIC = true;
+  public final static USE_ELASTIC = true;
 
   Schema(Graph g) {
     this.g = g
@@ -55,7 +55,7 @@ class Schema {
 	// Index for P123link values - using P123link_ for now, no direct support for SET properties
 	addMixedIndex(mgmt, "by_links", Vertex.class, [wikibaseId]);
 	// Index for P123value and P123q values
-	addMixedIndex(mgmt, "by_values", Edge.class, [prop])
+	addMixedIndex(mgmt, "by_values", Edge.class, [])
 
     mgmt.commit()
   }
@@ -108,7 +108,7 @@ class Schema {
 	  println "Creating mixed index $name"
 	  idx = mgmt.buildIndex(name, type)
 	  for(k in keys) {
-		  idx = idx.addKey(k)
+		  idx = idx.addKey(k, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',name))
 	  }
 	  idx.buildMixedIndex("search")
   }
