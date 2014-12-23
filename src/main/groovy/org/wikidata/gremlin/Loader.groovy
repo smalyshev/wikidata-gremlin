@@ -265,14 +265,16 @@ class Loader {
 				// update also the links
 				if(target.wikibaseId && target.wikibaseId[0] == 'Q'
 					&& !v.out(prop).has('wikibaseId', target.wikibaseId).hasNext()) {
+					def lname = getLinkName(prop)
 					// if this link targeted v(target) and there are no links to it anymore
 					// drop it from links
-					for(vp in v.getProperties(getLinkName(prop))) {
+					for(vp in v.getProperties(lname)) {
 						if(vp.getValue() == target.wikibaseId) {
 							vp.remove();
 							break;
 						}
 					}
+					v.setProperty(getLinkName(prop)+"_", v[lname].join(' '))
 				}
 			} else {
 				claimsById[cl.contentHash].exists = true
@@ -388,10 +390,14 @@ class Loader {
 	claimC.setProperty('property', data.property)
 	claimC.setProperty('contentHash', contentHash)
 
-	if(!isValue && outgoing.wikibaseId && !v.getProperties(getLinkName(data.property)).any{it.getValue() == outgoing.wikibaseId}) {
+	if(!isValue && outgoing.wikibaseId) {
+		def lname = getLinkName(data.property)
   	  // Create reverse index for edges to allow faster reverse lookups for queries like "get all humans"
   	  // See discussion: https://groups.google.com/forum/#!topic/aureliusgraphs/-3QQIWaT2H8
-		v.addProperty(getLinkName(data.property), outgoing.wikibaseId)
+	  if(!v.getProperties(lname).any{it.getValue() == outgoing.wikibaseId}) {
+	    v.addProperty(lname, outgoing.wikibaseId)
+	  }
+	  v.setProperty(lname+"_", v[lname].join(' '))
 	}
 
 	if(isValue && value) {
@@ -473,6 +479,11 @@ class Loader {
 			  def edge = mgmt.getEdgeLabel(label)
 			  s.addVIndex(mgmt, edge, "by_"+name, prop)
 		  }
+		  // Dates currently not supported by Titan mixed indexes
+		  if(label && dataType != Date.class) {
+			  def index = mgmt.getGraphIndex('by_values')
+			  mgmt.addIndexKey(index, prop)
+		  }
 	  }
       mgmt.commit()
   }
@@ -495,12 +506,16 @@ class Loader {
 	  // Create reverse index for edges to allow faster reverse lookups for queries like "get all humans"
 	  // See discussion: https://groups.google.com/forum/#!topic/aureliusgraphs/-3QQIWaT2H8
 	  def linkName = getLinkName(name)
-	  def prop
-	  prop = mgmt.getPropertyKey(linkName)
+	  def prop = mgmt.getPropertyKey(linkName)
+	  // This one stringified for Elastic
+	  def prop2 = s.addProperty(mgmt, linkName+"_", String.class)
 	  if(!prop) {
 		prop = mgmt.makePropertyKey(linkName).dataType(String.class).cardinality(Cardinality.SET).make()
 	  }
 	  s.addIndex(mgmt, "by_"+linkName, Vertex.class, [prop])
+	  def mindex = mgmt.getGraphIndex('by_links')
+	  mgmt.addIndexKey(mindex, prop2)
+
       mgmt.commit()
   }
 

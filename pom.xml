@@ -27,9 +27,9 @@
     <version>1.8.9</version>
   </dependency>
   		<dependency>
-  			<groupId>org.parboiled</groupId>
-  			<artifactId>parboiled-java</artifactId>
-  			<version>1.1.6</version>
+  			<groupId>org.antlr</groupId>
+  			<artifactId>antlr4</artifactId>
+  			<version>4.3</version>
   		</dependency>
 	</dependencies>
 	<build>
@@ -62,6 +62,18 @@
 					</dependency>
 				</dependencies>
 			</plugin>
+			<plugin>
+    <groupId>org.antlr</groupId>
+    <artifactId>antlr4-maven-plugin</artifactId>
+    <version>4.3</version>
+    <executions>
+<!--         <execution>
+            <goals>
+                <goal>antlr4</goal>
+            </goals>
+        </execution>
+ -->    </executions>
+</plugin>
 		</plugins>
 		<pluginManagement>
 			<plugins>

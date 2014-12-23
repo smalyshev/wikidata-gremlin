@@ -34,8 +34,8 @@ class Schema {
 	def prop = addProperty(mgmt, 'property', String.class)
 	def etype = addProperty(mgmt, 'edgeType', String.class)
 	def rank = addProperty(mgmt, 'rank', Boolean.class)
-	def claims = addEdgeLabel(mgmt, 'claim', prop, wikibaseId)
 	def hash = addProperty(mgmt, "contentHash", String.class)
+	def claims = addEdgeLabel(mgmt, 'claim', prop, wikibaseId, hash)
 
 	addIndex(mgmt, 'by_wikibaseId', Vertex.class, [wikibaseId], true)
 	addIndex(mgmt, 'by_wikibaseIdE', Edge.class, [wikibaseId]) // may not be needed
@@ -47,8 +47,15 @@ class Schema {
 	//addIndex(mgmt, 'by_hash', Vertex.class, [hash]) //? may not be needed
 	addIndex(mgmt, 'by_Ehash', Edge.class, [hash])
 
-	// ???
-	addVIndex(mgmt, claims, 'by_claims', wikibaseId, rank, prop)
+	// ??? Maybe not needed anymore
+	addVIndex(mgmt, claims, 'by_claims', rank, prop, hash)
+
+	// Mixed indexes
+	// Index for P123link values - using P123link_ for now, no direct support for SET properties
+	addMixedIndex(mgmt, "by_links", Vertex.class, [wikibaseId]);
+	// Index for P123value and P123q values
+	addMixedIndex(mgmt, "by_values", Edge.class, [prop])
+
     mgmt.commit()
   }
 
@@ -88,7 +95,21 @@ class Schema {
 	  idx.buildCompositeIndex()
   }
 
-  def addVIndex(mgmt, label, name, Object[] keys)
+  def addMixedIndex(mgmt, name, type, keys)
+  {
+	  def idx = mgmt.getGraphIndex(name);
+	  if(idx) {
+		  return idx
+	  }
+	  println "Creating mixed index $name"
+	  idx = mgmt.buildIndex(name, type)
+	  for(k in keys) {
+		  idx = idx.addKey(k)
+	  }
+	  idx.buildMixedIndex("search")
+  }
+
+    def addVIndex(mgmt, label, name, Object[] keys)
   {
 	  def idx = mgmt.getRelationIndex(label, name);
 	  if(idx) {

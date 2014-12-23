@@ -1,16 +1,21 @@
 package org.wikidata.gremlin
 
 import com.tinkerpop.blueprints.Graph
-
 import com.tinkerpop.pipes.Pipe
+import java.io.ByteArrayInputStream;
+import org.antlr.v4.runtime.CommonTokenStream;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.tree.ParseTree;
+import org.antlr.v4.runtime.tree.Tree;
+import org.antlr.v4.runtime.ANTLRInputStream;
 import groovy.json.*
 
-//@Grab(group='org.parboiled', module='parboiled-java', version='1.1.6')
-import org.parboiled.Parboiled;
-import org.parboiled.common.StringUtils;
-import static org.parboiled.support.ParseTreeUtils.printNodeTree;
-import org.parboiled.support.ParsingResult;
-import org.parboiled.parserunners.ReportingParseRunner;
+////@Grab(group='org.parboiled', module='parboiled-java', version='1.1.6')
+//import org.parboiled.Parboiled;
+//import org.parboiled.common.StringUtils;
+//import static org.parboiled.support.ParseTreeUtils.printNodeTree;
+//import org.parboiled.support.ParsingResult;
+//import org.parboiled.parserunners.ReportingParseRunner;
 
 class QueryEngine {
 	private File f
@@ -93,12 +98,14 @@ class QueryEngine {
 
 }
 
+/*
 class Parser {
 	public static void parse(String s) {
-		def parser = Parboiled.createParser(WDQParser.class)
-		def result = new ReportingParseRunner(parser.WDQ()).run(s);
-		println s + " = " + result.parseTreeRoot.getValue() + '\n';
-		println printNodeTree(result) + '\n';
-		println StringUtils.join(result.parseErrors, "---\n")
+		def input = new ANTLRInputStream(s)
+		def lexer = new WDQLexer(input)
+		def tokens = new CommonTokenStream(lexer)
+		def parser = new WDQParser(tokens)
+		ParseTree t = parser.expression();
+		System.out.println(t.toStringTree(parser));
 	}
-	}
+}*/
