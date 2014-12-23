@@ -10,6 +10,7 @@ import com.thinkaurelius.titan.core.Order
 
 class Schema {
   final Graph g
+  public final USE_ELASTIC = true;
 
   Schema(Graph g) {
     this.g = g
@@ -97,6 +98,9 @@ class Schema {
 
   def addMixedIndex(mgmt, name, type, keys)
   {
+	  if(!USE_ELASTIC) {
+		  return;
+	  }
 	  def idx = mgmt.getGraphIndex(name);
 	  if(idx) {
 		  return idx

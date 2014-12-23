@@ -26,11 +26,13 @@
     <artifactId>groovy-all</artifactId>
     <version>1.8.9</version>
   </dependency>
+<!--
   		<dependency>
   			<groupId>org.antlr</groupId>
   			<artifactId>antlr4</artifactId>
   			<version>4.3</version>
   		</dependency>
+-->
 	</dependencies>
 	<build>
 		<finalName>wikidta-gremlin-${project.version}</finalName>
@@ -62,18 +64,20 @@
 					</dependency>
 				</dependencies>
 			</plugin>
+<!--
 			<plugin>
     <groupId>org.antlr</groupId>
     <artifactId>antlr4-maven-plugin</artifactId>
     <version>4.3</version>
     <executions>
-<!--         <execution>
+         <execution>
             <goals>
                 <goal>antlr4</goal>
             </goals>
         </execution>
- -->    </executions>
+    </executions>
 </plugin>
+-->
 		</plugins>
 		<pluginManagement>
 			<plugins>

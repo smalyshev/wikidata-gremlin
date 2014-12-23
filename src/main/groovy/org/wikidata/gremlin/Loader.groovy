@@ -480,7 +480,7 @@ class Loader {
 			  s.addVIndex(mgmt, edge, "by_"+name, prop)
 		  }
 		  // Dates currently not supported by Titan mixed indexes
-		  if(label && dataType != Date.class) {
+		  if(Schema.USE_ELASTIC && label && dataType != Date.class) {
 			  def index = mgmt.getGraphIndex('by_values')
 			  mgmt.addIndexKey(index, prop)
 		  }
@@ -513,8 +513,10 @@ class Loader {
 		prop = mgmt.makePropertyKey(linkName).dataType(String.class).cardinality(Cardinality.SET).make()
 	  }
 	  s.addIndex(mgmt, "by_"+linkName, Vertex.class, [prop])
-	  def mindex = mgmt.getGraphIndex('by_links')
-	  mgmt.addIndexKey(mindex, prop2)
+	  if(Schema.USE_ELASTIC) {
+		  def mindex = mgmt.getGraphIndex('by_links')
+		  mgmt.addIndexKey(mindex, prop2)
+	  }
 
       mgmt.commit()
   }

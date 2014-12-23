@@ -3,19 +3,13 @@ package org.wikidata.gremlin
 import com.tinkerpop.blueprints.Graph
 import com.tinkerpop.pipes.Pipe
 import java.io.ByteArrayInputStream;
-import org.antlr.v4.runtime.CommonTokenStream;
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.tree.ParseTree;
-import org.antlr.v4.runtime.tree.Tree;
-import org.antlr.v4.runtime.ANTLRInputStream;
+//import org.antlr.v4.runtime.CommonTokenStream;
+//import org.antlr.v4.runtime.ParserRuleContext;
+//import org.antlr.v4.runtime.tree.ParseTree;
+//import org.antlr.v4.runtime.tree.Tree;
+//import org.antlr.v4.runtime.ANTLRInputStream;
 import groovy.json.*
 
-////@Grab(group='org.parboiled', module='parboiled-java', version='1.1.6')
-//import org.parboiled.Parboiled;
-//import org.parboiled.common.StringUtils;
-//import static org.parboiled.support.ParseTreeUtils.printNodeTree;
-//import org.parboiled.support.ParsingResult;
-//import org.parboiled.parserunners.ReportingParseRunner;
 
 class QueryEngine {
 	private File f
