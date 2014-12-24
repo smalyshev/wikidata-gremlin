@@ -55,7 +55,7 @@ class Schema {
 	// Index for P123link values - using P123link_ for now, no direct support for SET properties
 	addMixedIndex(mgmt, "by_links", Vertex.class, [wikibaseId]);
 	// Index for P123value and P123q values
-	addMixedIndex(mgmt, "by_values", Edge.class, [])
+	addMixedIndex(mgmt, "by_values", Edge.class, [prop])
 
     mgmt.commit()
   }
@@ -108,7 +108,7 @@ class Schema {
 	  println "Creating mixed index $name"
 	  idx = mgmt.buildIndex(name, type)
 	  for(k in keys) {
-		  idx = idx.addKey(k, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',name))
+		  idx = idx.addKey(k, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',k.getName()))
 	  }
 	  idx.buildMixedIndex("search")
   }

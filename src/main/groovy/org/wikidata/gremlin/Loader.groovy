@@ -12,11 +12,25 @@ import com.thinkaurelius.titan.core.attribute.Geoshape
 import com.thinkaurelius.titan.core.Cardinality
 import org.apache.commons.lang.SerializationUtils
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
 
+/**
+ * Loading data from external format (e.g. JSON) into the database
+ */
 class Loader {
   final Graph g
-  boolean skip_props
+  /**
+   * Should we skip loading properties?
+   */
+  private boolean skip_props
   private def currentVertex
+  // Rough number of seconds in a year, for storing whole years
+  // Source: https://en.wikipedia.org/wiki/Year#Astronomical_years
+  public final static long SECONDS_IN_YEAR = 31557600;
+  // Largest year that Java can represent accurately.
+  // This is just an threshold, beyond this year we do not try to parse dates
+  // but store (number of whole years)*SECONDS_IN_YEAR.
+  public final static long LARGEST_YEAR = 292000000;
 
   Loader(Graph g, skip_props = true) {
     this.g = g
@@ -54,6 +68,10 @@ class Loader {
 	}
   }
 
+  /**
+   * Load into the DB from hashmap stricture
+   * @param item
+   */
   public void loadFromItem(item) {
 	  def id = item['id']
 	  def isProperty = (id[0] == 'P')
@@ -92,6 +110,11 @@ class Loader {
 // Not committing here to allow DataLoader to group updates
   }
 
+  /**
+   * Fetch data from the Wikidata
+   * @param String id
+   * @return HashMap
+   */
   private def fetchEntity(id) {
 	  println "Fetching ${id} from Wikidata"
 	  def text = new URL("http://www.wikidata.org/wiki/Special:EntityData/${id}.json").getText('UTF-8')
@@ -100,6 +123,11 @@ class Loader {
 	  return items.entities[ id ]
   }
 
+  /**
+   * Get the data class for the wikibase type
+   * @param wikitype
+   * @return
+   */
   private Class getDataType(wikitype)
   {
 	  // TODO: figure out how to make types for with novalue/somevalue
@@ -112,7 +140,7 @@ class Loader {
 		  case 'globe-coordinate': return Geoshape.class
 		  // TODO: which class we have to use here? Maybe BigInteger?
 		  case 'quantity':         return String.class
-		  case 'time':             return Date.class
+		  case 'time':             return Long.class
 		  default:
 		  	return Object.class
 	  }
@@ -190,7 +218,7 @@ class Loader {
 	/* TODO: for now, we just wipe the properties clean and reinstate them.
 	In the future, we might want to have more intelligent strategies for updates */
 	def hash = getHash(item, 'labels')
-	if(v.contentHash == hash) {
+	if(!isNew && v.contentHash == hash) {
 		// hash did not change, we're done here
 		return
 	} else {
@@ -450,20 +478,29 @@ class Loader {
 
   // Format looks like   +0001783 - 12 - 23 T 00 : 00 : 00 Z without the spaces
   private timeFormat = /(sd{4,50})-(dd)-(dd)T(dd):(dd):(dd)Z/.replaceAll('s', /[+-]/).replaceAll('d', /[0-9]/)
-  private def extractPropertyValueFromTime(time) {
+  private static SimpleDateFormat df = new SimpleDateFormat( "yyyy-MM-dd'T'hh:mm:ssz", Locale.ENGLISH );
+
+  private long extractPropertyValueFromTime(time) {
     def matches = time =~ timeFormat
     if (!matches) {
       println "Error parsing date on ${getCurrentVertex()?.wikibaseId}:  ${time}.  Skipping."
       return null
     }
-	int y = matches[0][1] as long
-	if(y < 0) {
-		// TODO: Java is not good with handling BC, need better solution
-		return null
+	long y = matches[0][1] as long
+	if(Math.abs(y) > LARGEST_YEAR) {
+		// If the year is too big, just do it in whole years
+		return y*SECONDS_IN_YEAR;
 	}
-	//def df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
-    //return df.parse(time)
-	Date.parse("yyyy-MM-dd HH:mm:ss", "$y-${matches[0][2]}-${matches[0][3]} ${matches[0][4]}:${matches[0][5]}:${matches[0][6]}")
+	def sign = 1
+	if(y < 0) {
+		// Java parser is not spectacular in handling negative years for some reason
+		sign = -1
+		y = -y
+	}
+	// return time in seconds
+	df.parse("$y-${matches[0][2]}-${matches[0][3]}T${matches[0][4]}:${matches[0][5]}:${matches[0][6]}GMT-00:00").getTime()*sign/1000;
+	// We assume wikibase dates are in UTC with Z timezone, since we match the regexp against Z
+	// If not, we'll need to fix it here
   }
 
   private def initProperty(name, dataType=Object.class, label = null)
@@ -479,8 +516,7 @@ class Loader {
 			  def edge = mgmt.getEdgeLabel(label)
 			  s.addVIndex(mgmt, edge, "by_"+name, prop)
 		  }
-		  // Dates currently not supported by Titan mixed indexes
-		  if(Schema.USE_ELASTIC && label && dataType != Date.class) {
+		  if(Schema.USE_ELASTIC && label) {
 			  def index = mgmt.getGraphIndex('by_values')
 			  mgmt.addIndexKey(index, prop, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',name))
 		  }
