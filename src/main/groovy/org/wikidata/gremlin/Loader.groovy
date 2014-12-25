@@ -567,18 +567,18 @@ class Loader {
 	}
 	// We also need to prevent dates like 2014-00-00 from breaking it
 	// We'll convert them to 2014-01-01
-	// No checks for dates like 31 Semtember though - we can't auto-fix that
+	// No checks for dates like 31 September though - we can't auto-fix that
 	def m = matches[0][2] as int
 	if(m <1 || m > 12) {
 		// replace it with January
-		matches[0][2] = '01'
+		m = 1
 	}
 	def d = matches[0][3] as int
 	if(d == 0) {
-		matches[0][3] = '01'
+		d = 1
 	}
 	// return time in seconds
-	DateUtils.fromDate(df.parseDateTime("$y-${matches[0][2]}-${matches[0][3]}T${matches[0][4]}:${matches[0][5]}:${matches[0][6]}Z"))
+	DateUtils.fromDate(df.parseDateTime("${y}-${m}-${d}T${matches[0][4]}:${matches[0][5]}:${matches[0][6]}Z"))
 	// We assume wikibase dates are in UTC with Z timezone, since we match the regexp against Z
 	// If not, we'll need to fix it here
   }
