@@ -3,6 +3,7 @@ package org.wikidata.gremlin
 // Apache 2 Licensed
 
 import com.tinkerpop.blueprints.Graph
+
 import com.tinkerpop.blueprints.Vertex
 import com.tinkerpop.blueprints.Edge
 import com.tinkerpop.blueprints.Direction
@@ -12,7 +13,8 @@ import com.thinkaurelius.titan.core.attribute.Geoshape
 import com.thinkaurelius.titan.core.Cardinality
 import org.apache.commons.lang.SerializationUtils
 import java.security.MessageDigest
-import java.text.SimpleDateFormat
+import org.joda.time.format.*;
+import org.joda.time.*;
 
 /**
  * Loading data from external format (e.g. JSON) into the database
@@ -24,13 +26,6 @@ class Loader {
    */
   private boolean skip_props
   private def currentVertex
-  // Rough number of seconds in a year, for storing whole years
-  // Source: https://en.wikipedia.org/wiki/Year#Astronomical_years
-  public final static long SECONDS_IN_YEAR = 31557600;
-  // Largest year that Java can represent accurately.
-  // This is just an threshold, beyond this year we do not try to parse dates
-  // but store (number of whole years)*SECONDS_IN_YEAR.
-  public final static long LARGEST_YEAR = 292000000;
 
   Loader(Graph g, skip_props = true) {
     this.g = g
@@ -85,7 +80,7 @@ class Loader {
 		  println "Creating $id"
 		  isNew = true
 	  } else {
-	  	if(v['lastrevid'] && v['lastrevid'] > item['lastrevid']) {
+	  	if(item['lastrevid'] && v['lastrevid'] && v['lastrevid'] > item['lastrevid']) {
 			  println "Ignoring update for $id - it's rev ${item['lastrevid']} and we already have ${v['lastrevid']}"
 			  return
 		  }
@@ -146,26 +141,50 @@ class Loader {
 	  }
   }
 
-  public String getValueName(itemName)
+  /**
+   * Get Property value name from Property name
+   * @param itemName
+   * @return String
+   */
+  public String getValueName(String itemName)
   {
 	  return itemName+"value"
   }
 
+  /**
+   * Get Property qualifier name from Property name
+   * @param itemName
+   * @return String
+   */
   public String getQualifierName(itemName)
   {
 	  return itemName+"q"
   }
 
+  /**
+   * Get Property full value storage name from Property name
+   * @param itemName
+   * @return String
+   */
   public String getAllValuesName(itemName)
   {
 	  return itemName+"_all"
   }
 
+  /**
+   * Get Claim link name from Property name
+   * @param itemName
+   * @return String
+   */
   public String getLinkName(itemName)
   {
 	  return itemName+"link"
   }
 
+  /**
+   * Check if property exists and create it if not
+   * Creates endge labels, properties, etc.
+   */
   private void checkProperty(item)
   {
 	  // According to new data model, all claims are edges
@@ -183,6 +202,11 @@ class Loader {
 	  initProperty(getQualifierName(item['id']), getDataType(item['datatype']), item['id'])
   }
 
+  /**
+   * Get vertex by Wikibase ID or create stub if it does not exist
+   * @param id
+   * @return
+   */
   private def getOrCreateVertex(id)
   {
     def v = g.V('wikibaseId', id)
@@ -212,11 +236,14 @@ class Loader {
 	  return new BigInteger(1, m.digest()).toString(16).padLeft( 40, '0')
   }
 
+  /**
+   * Refresh labels for the Item vertex
+   * @param v Vertex
+   * @param item Item data
+   * @param isNew Is this a brand new data item?
+   */
   private void updateLabels(v, item, isNew)
   {
-	// clean labels that do not exist in item
-	/* TODO: for now, we just wipe the properties clean and reinstate them.
-	In the future, we might want to have more intelligent strategies for updates */
 	def hash = getHash(item, 'labels')
 	if(!isNew && v.contentHash == hash) {
 		// hash did not change, we're done here
@@ -263,6 +290,12 @@ class Loader {
 */
   }
 
+  /**
+   * Update all claims on a vertex
+   * @param v Vertex
+   * @param item Item data
+   * @param isNew Is this a brand new data item?
+   */
   private void updateClaims(v, item, isNew) {
 	def claimsById = [:]
     for (claimsOnProperty in item.claims) {
@@ -325,7 +358,12 @@ class Loader {
 	}
   }
 
-  private void addQualifiers(item, qualifiers) {
+  /**
+   * Process qualifiers for the claim
+   * @param item
+   * @param qualifiers
+   */
+   private void addQualifiers(item, qualifiers) {
 	  for(q in qualifiers) {
 		  if(!q.value) {
 			  continue
@@ -346,6 +384,12 @@ class Loader {
 	  }
   }
 
+   /**
+    * Get target vertex for the claim
+    * @param data Data structure for snak
+    * @param value Parsed value (mainly used for null checks)
+    * @return Outgoing vertex or null
+    */
   private def getTargetFromSnak(data, value)
   {
       def outgoing
@@ -377,6 +421,12 @@ class Loader {
 	  return outgoing
   }
 
+  /**
+   * Create full value property storage
+   * @param datavalue Value map
+   * @param property Property name
+   * @param item Target item where the property is set
+   */
   private void addAllValues(datavalue, property, item)
   {
 	  if(!(datavalue instanceof HashMap)) {
@@ -393,6 +443,14 @@ class Loader {
 	  item.setProperty(getAllValuesName(property), v)
   }
 
+  /**
+   * Update single claim on a vertex
+   * @param v Vertex
+   * @param claim Claim data
+   * @param content Hash Hash for claim contents
+   * 				(for cloned claims from expand, this is the hash of the whole claim)
+   * @return Claim edge
+   */
   private def updateClaim(Vertex v, claim, contentHash)
   {
 	def data = claim.mainsnak
@@ -442,7 +500,13 @@ class Loader {
 	return claimE
   }
 
-  private def extractPropertyValueFromClaim(claim, allowLink = false) {
+  /**
+   * Extract value from claim data
+   * @param claim
+   * @return
+   */
+  private def extractPropertyValueFromClaim(claim, allowLink = false)
+  {
 	  if (claim.snaktype != 'value') {
 		  return null
 	  }
@@ -467,6 +531,11 @@ class Loader {
 	}
   }
 
+  /**
+   * Extract coordinate value
+   * @param coord Coordinate data as map
+   * @return
+   */
   private def extractPropertyValueFromGlobeCoordinate(coord) {
     // Has latitude, longitude, alt, precision, globe
     return Geoshape.point(coord.latitude as double, coord.longitude as double)
@@ -478,32 +547,48 @@ class Loader {
 
   // Format looks like   +0001783 - 12 - 23 T 00 : 00 : 00 Z without the spaces
   private timeFormat = /(sd{4,50})-(dd)-(dd)T(dd):(dd):(dd)Z/.replaceAll('s', /[+-]/).replaceAll('d', /[0-9]/)
-  private static SimpleDateFormat df = new SimpleDateFormat( "yyyy-MM-dd'T'hh:mm:ssz", Locale.ENGLISH );
-
-  private long extractPropertyValueFromTime(time) {
+  private static def df = ISODateTimeFormat.dateTimeNoMillis().withZone(DateTimeZone.UTC)
+  /**
+   * Get date representation from string
+   * @param time Time string
+   * @return
+   */
+  private long extractPropertyValueFromTime(String time) {
     def matches = time =~ timeFormat
     if (!matches) {
       println "Error parsing date on ${getCurrentVertex()?.wikibaseId}:  ${time}.  Skipping."
       return null
     }
 	long y = matches[0][1] as long
-	if(Math.abs(y) > LARGEST_YEAR) {
+	if(y >= DateUtils.LARGEST_YEAR || y <= 0) {
 		// If the year is too big, just do it in whole years
-		return y*SECONDS_IN_YEAR;
+		// We store dates beyond 1AD in just years, as we have no calendar to apply there
+		return DateUtils.fromYear(y)
 	}
-	def sign = 1
-	if(y < 0) {
-		// Java parser is not spectacular in handling negative years for some reason
-		sign = -1
-		y = -y
+	// We also need to prevent dates like 2014-00-00 from breaking it
+	// We'll convert them to 2014-01-01
+	// No checks for dates like 31 Semtember though - we can't auto-fix that
+	def m = matches[0][2] as int
+	if(m <1 || m > 12) {
+		// replace it with January
+		matches[0][2] = '01'
+	}
+	def d = matches[0][3] as int
+	if(d == 0) {
+		matches[0][3] = '01'
 	}
 	// return time in seconds
-	df.parse("$y-${matches[0][2]}-${matches[0][3]}T${matches[0][4]}:${matches[0][5]}:${matches[0][6]}GMT-00:00").getTime()*sign/1000;
+	DateUtils.fromDate(df.parseDateTime("$y-${matches[0][2]}-${matches[0][3]}T${matches[0][4]}:${matches[0][5]}:${matches[0][6]}Z"))
 	// We assume wikibase dates are in UTC with Z timezone, since we match the regexp against Z
 	// If not, we'll need to fix it here
   }
 
-  private def initProperty(name, dataType=Object.class, label = null)
+  /**
+   * Initialize Titan property
+   * @param name
+   * @return
+   */
+  private void initProperty(name, dataType=Object.class, label = null)
   {
 	  def s = new Schema(g)
 	  def mgmt = g.getManagementSystem()
@@ -524,7 +609,12 @@ class Loader {
       mgmt.commit()
   }
 
-  private def initEdge(name)
+  /**
+   * Initialize Titan edge
+   * @param name
+   * @return
+   */
+  private void initEdge(name)
   {
 	  def s = new Schema(g)
 	  def mgmt = g.getManagementSystem()
@@ -550,6 +640,7 @@ class Loader {
 	  }
 	  s.addIndex(mgmt, "by_"+linkName, Vertex.class, [prop])
 	  if(Schema.USE_ELASTIC) {
+		  // Add Elastic field to Elastic index
 		  def mindex = mgmt.getGraphIndex('by_links')
 		  mgmt.addIndexKey(mindex, prop2, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',linkName+"_"))
 	  }
@@ -557,6 +648,12 @@ class Loader {
       mgmt.commit()
   }
 
+  /**
+   * Convert one claim to one or more claims where each qualifier is encountered only once
+   * P580 and P582 (start date/end date) are grouped together.
+   * @param claim
+   * @return
+   */
   public def expand(claim)
   {
   	if(!claim.qualifiers) {

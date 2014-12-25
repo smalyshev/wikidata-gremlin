@@ -10,3 +10,4 @@ w = org.wikidata.gremlin.ConsoleInit.init(this)
 propLoader = new org.wikidata.gremlin.DataLoader(g, false)
 dataLoader = new org.wikidata.gremlin.DataLoader(g, true)
 q = new org.wikidata.gremlin.QueryEngine(g)
+import org.wikidata.gremlin.*;
