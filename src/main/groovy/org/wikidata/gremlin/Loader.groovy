@@ -270,7 +270,7 @@ class Loader {
       	try {
 			v[l] = label.value.value
 		} catch(java.lang.IllegalArgumentException e) {
-			initProperty(l, String.class)
+			initProperty(l)
 			v[l] = label.value.value
 		}
     }

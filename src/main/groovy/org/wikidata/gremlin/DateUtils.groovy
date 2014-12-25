@@ -1,9 +1,6 @@
 package org.wikidata.gremlin
 import org.joda.time.*;
 import org.joda.time.format.*;
-//@Grapes(
-//	@Grab(group='joda-time', module='joda-time', version='2.6')
-//)
 class DateUtils {
 	// Rough number of seconds in a year, for storing whole years
 	// Source: https://en.wikipedia.org/wiki/Year#Astronomical_years
@@ -19,8 +16,8 @@ class DateUtils {
 	// Seconds for lower bound of dates we represent as Java dates
 	public final static long LOWEST_DATE_SECONDS = yearParser.parseDateTime("0").getMillis()/1000;
 
-	public final static def dateMax = new DateTime(Long.MAX_VALUE, DateTimeZone.UTC)
-	public final static def dateMin = new DateTime(Long.MIN_VALUE, DateTimeZone.UTC)
+	public final static DateTime dateMax = new DateTime(LARGEST_DATE_SECONDS*1000+1, DateTimeZone.UTC)
+	public final static DateTime dateMin = new DateTime(LOWEST_DATE_SECONDS*1000-1, DateTimeZone.UTC)
 
 	/**
 	 * Can this date be converted to Java date?
