@@ -101,7 +101,8 @@ class DataLoader {
 			try {
 				def item = json.parseText(line)
 	   		 	if(!item) {
-	   			 break
+				  println "Bad line $i, skipping\n"
+ 	   			  break
 	   		 	}
 	   		 	loader.loadFromItem(item)
 			} catch(e) {
@@ -120,6 +121,7 @@ class DataLoader {
 			}
 		}
 		g.commit()
+		println "Imported $max lines"
 	}
 	
 	public void processClaims(max, Closure c) {

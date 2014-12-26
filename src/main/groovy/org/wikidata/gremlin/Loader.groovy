@@ -131,6 +131,7 @@ class Loader {
 		  case 'monolingualtext':
 		  case 'url':
 		  case 'wikibase-item':
+		  case 'wikibase-property':
 		  case 'commonsMedia':     return String.class
 		  case 'globe-coordinate': return Geoshape.class
 		  // TODO: which class we have to use here? Maybe BigInteger?
@@ -190,7 +191,7 @@ class Loader {
 	  // According to new data model, all claims are edges
 	  initEdge(item['id'])
 	  // For value properties, we also need the value prop
-	  if(item['datatype'] && item['datatype'] != 'wikibase-item') {
+	  if(item['datatype'] && item['datatype'] != 'wikibase-item' && item['datatype'] != 'wikibase-property') {
 		  initProperty(getValueName(item['id']), getDataType(item['datatype']), item['id'])
 		  // for sub-values
 		  if(item['datatype'] != 'string') {
@@ -376,7 +377,7 @@ class Loader {
 			  def value = extractPropertyValueFromClaim(qitem)
 			  if(value) {
 				  item.setProperty(qname, value)
-				  if(qitem.datatype != 'wikibase-item' && qitem.datatype != 'string') {
+				  if(qitem.datatype != 'wikibase-item' && qitem.datatype != 'string' && qitem.datatype != 'wikibase-property') {
 					  addAllValues(qitem.datavalue.value, qname, item)
 				  }
 			  }
@@ -398,6 +399,8 @@ class Loader {
 
   		if(data.datatype == 'wikibase-item') {
   			outgoing = getOrCreateVertex('Q' + data.datavalue.value[ 'numeric-id' ])
+  		} else if(data.datatype == 'wikibase-property') {
+		    outgoing = getOrCreateVertex('P' + data.datavalue.value[ 'numeric-id' ])
   		} else {
 			if(value == null) {
 				// if we are supposed to have a specific value, but could not find it
@@ -456,7 +459,7 @@ class Loader {
 	def data = claim.mainsnak
 	def value = extractPropertyValueFromClaim(data)
 	def outgoing = getTargetFromSnak(claim.mainsnak, value)
-	def isValue = (data.datatype != 'wikibase-item')
+	def isValue = (data.datatype != 'wikibase-item' && data.datatype != 'wikibase-property')
 
   	if(!outgoing) {
   		return null
@@ -520,6 +523,7 @@ class Loader {
 		    case 'string':           return value
 		    case 'time':             return extractPropertyValueFromTime(value.time)
 		    case 'url':              return value
+			case 'wikibase-property':    return allowLink?"P"+value['numeric-id']:null
 			case 'wikibase-item':    return allowLink?"Q"+value['numeric-id']:null
 		    default:
 		      println "Unknown datatype on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype}.  Skipping."
@@ -603,7 +607,11 @@ class Loader {
 		  }
 		  if(Schema.USE_ELASTIC && label) {
 			  def index = mgmt.getGraphIndex('by_values')
-			  mgmt.addIndexKey(index, prop, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',name))
+			  try {
+				  mgmt.addIndexKey(index, prop, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',name))
+			  } catch(IllegalArgumentException e) {
+		        // already added
+		      }
 		  }
 	  }
       mgmt.commit()
@@ -634,15 +642,22 @@ class Loader {
 	  def linkName = getLinkName(name)
 	  def prop = mgmt.getPropertyKey(linkName)
 	  // This one stringified for Elastic
-	  def prop2 = s.addProperty(mgmt, linkName+"_", String.class)
 	  if(!prop) {
 		prop = mgmt.makePropertyKey(linkName).dataType(String.class).cardinality(Cardinality.SET).make()
+	  }
+	  def prop2 = mgmt.getPropertyKey(linkName+"_")
+	  if(!prop2) {
+		  prop2 = s.addProperty(mgmt, linkName+"_", String.class)
 	  }
 	  s.addIndex(mgmt, "by_"+linkName, Vertex.class, [prop])
 	  if(Schema.USE_ELASTIC) {
 		  // Add Elastic field to Elastic index
 		  def mindex = mgmt.getGraphIndex('by_links')
-		  mgmt.addIndexKey(mindex, prop2, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',linkName+"_"))
+		  try {
+			  mgmt.addIndexKey(mindex, prop2, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',linkName+"_"))
+		  } catch(IllegalArgumentException e) {
+		  // already added
+		  }
 	  }
 
       mgmt.commit()

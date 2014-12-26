@@ -50,7 +50,7 @@ class ConsoleInit {
    */
   private void schema() {
     try {
-      def schema = new org.wikidata.gremlin.Schema(script.g)
+      def schema = new Schema(script.g)
       schema.setupSchema()
       schema.setupConstantData()
     } catch (Exception e) {
@@ -61,13 +61,13 @@ class ConsoleInit {
   }
 
   private void dsl() {
-    def loader = new org.wikidata.gremlin.Loader(script.g)
-    def dsl = new org.wikidata.gremlin.DomainSpecificLanguage(loader)
+    def loader = new Loader(script.g, false)
+    def dsl = new DomainSpecificLanguage(loader)
     dsl.setup()
   }
 
   static void loadData(script, max, procs, num, file, ignore_props=true) {
-      def loader = new org.wikidata.gremlin.Loader(script.g, ignore_props)
+      def loader = new Loader(script.g, ignore_props)
 	  new DataLoader(loader).setReaders(procs).setNum(num).gzipFile(file).read(max)
   }
 
