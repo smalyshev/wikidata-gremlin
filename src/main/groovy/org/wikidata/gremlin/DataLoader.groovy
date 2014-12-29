@@ -3,20 +3,22 @@ package org.wikidata.gremlin
 import java.io.Reader
 import com.tinkerpop.blueprints.Graph
 import groovy.json.*
+import com.thinkaurelius.titan.core.TitanException
 
 class DataLoader {
 	private int LINES_PER_COMMIT = 1000
 	final Loader loader
 	final Graph g
 	private Reader stream
-	private File rejects
-	private File processed
+	private File rejects = null
+	private File processed = null
 	private String fileName
 	private int numReaders = 1
 	private int myNum = 0
 	private boolean gzipped
 	private int skipLines = 0
 	private boolean failOnError = false
+	private int processedNum = 0
 	
 	DataLoader(Graph g, boolean ignore_props = false) {
 		this.g = g
@@ -71,26 +73,47 @@ class DataLoader {
 		stream = new LineNumberReader(new InputStreamReader(input, "UTF-8"))
 	}
 	
-	protected void initRejects() {
+	protected void initFiles() {
+		if(processed) {
+			return
+		}
 		String basename = (fileName =~ /[^\/]+$/)[0]
 		rejects = new File("rejects.${basename}.${numReaders}.${myNum}.json")
 		processed = new File("processed.${basename}.${numReaders}.${myNum}")
 	}
 	
+	public DataLoader recover()
+	{
+		initFiles()
+		if(!processed.size()) {
+			// nothing to recover
+			return this
+		}
+		processedNum = processed.text as int;
+		println "Recovery: advancing line number by $processedNum"
+		return this
+	}
+	
 	public void load(max) {
 		initStream()
-		initRejects()
+		initFiles()
 		def json = new JsonSlurper() //.setType(JsonParserType.INDEX_OVERLAY )
 		String line = stream.readLine()
 		if(line[0] == '[') {
 			line = stream.readLine()
 		}
-		if(myNum > 0) {
-			for(i in 0..myNum-1) {
+		if(processedNum) {
+			// we need to advance the num by 1 since last line processed is 1000, not 999
+			processedNum++
+		}
+		if(myNum > 0 || processedNum > 0) {
+			for(i in 0..<(myNum+processedNum)) {
 				line = stream.readLine()
 			}
 		}
-		for(i in 0..max-1) {
+		def realLines = 0
+		def failedLines = 0
+		for(i in processedNum..<max) {
    		 	if(!line || line[0] == ']') {
    				break
    		 	}
@@ -105,12 +128,19 @@ class DataLoader {
  	   			  break
 	   		 	}
 	   		 	loader.loadFromItem(item)
+			} catch(TitanException e) {
+				// it's bad and for once it's not our fault. Let's stop for now
+				println "Titan exception: $e. Bailing out..."
+				e.printStackTrace()
+				break;
 			} catch(e) {
 				println "Importing line ${stream.getLineNumber()} failed: $e"
 				rejects << line
 				rejects << "\n"
+				failedLines++;
 				if(failOnError) { throw e; }
 			}
+			realLines++;
 			(0..numReaders-1).each() { line = stream.readLine() }
 			if(i != 0 && i % LINES_PER_COMMIT == 0) {
 				g.commit()
@@ -121,7 +151,7 @@ class DataLoader {
 			}
 		}
 		g.commit()
-		println "Imported $max lines"
+		println "Processed $realLines lines, failed $failedLines"
 	}
 	
 	public void processClaims(max, Closure c) {

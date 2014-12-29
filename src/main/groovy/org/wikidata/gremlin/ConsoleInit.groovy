@@ -22,7 +22,7 @@ class ConsoleInit {
   /**
    * Set the g global with the graph contents.
    */
-  private void graph() {
+  private def graph() {
     // First lets just see if we're already in a graph scope like on the web console.
     // Try initializing like we're in rexster command line console.
     try {
@@ -30,19 +30,24 @@ class ConsoleInit {
 		println "Initialized for Rexster Web Console"
 		return
 	  }
-      script.g = rexster.getGraph('graph')
+    } catch (MissingPropertyException e) {
+	// OK .g isn't defined.  Go to next option
+    }
+	try {
+      script.g = script.rexster.getGraph('wikidata')
       println "Initialized for Rexster Console"
     } catch (MissingPropertyException e) {
-      // OK rexster isn't defined.  Lets assume we're in the basic gremlin console.
+		// OK .rexster isn't defined.  Go to next option
+		throw e
     }
-    try {
-      println "Initializing for Gremlin console"
-      script.g = new TinkerGraph('wikidata', TinkerGraph.FileType.GRAPHSON)
-    } catch (Exception e) {
-      println "Something is wrong loading or creating the graph.  Here is the exception, good luck:"
-      e.printStackTrace()
-      System.exit(1)
-    }
+    return script.g
+//    try {
+//      println "Initializing for Gremlin console"
+//      script.g = new TinkerGraph('wikidata', TinkerGraph.FileType.GRAPHSON)
+//    } catch (Exception e) {
+//      println "Something is wrong loading or creating the graph.  Here is the exception, good luck:"
+//      throw e
+//    }
   }
 
   /**
@@ -74,7 +79,9 @@ class ConsoleInit {
   void benchmark(Closure c) {
 	  def t = System.currentTimeMillis()
 	  c()
-	  println (System.currentTimeMillis() - t)
+	  res = (System.currentTimeMillis() - t)
+	  println res
+	  res
   }
 
   void measure(int ntimes, Closure c) {
@@ -91,6 +98,7 @@ class ConsoleInit {
 	  println res
 	  println "Average: $avg"
 	  println "Time: ${avg/ntimes} ms"
+	  [avg: avg, times: res, time: avg/ntimes]
   }
 
   void test () {

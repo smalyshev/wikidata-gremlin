@@ -5,8 +5,8 @@ props.load("config.properties")
 props.setProperty("storage.machine-id-appendix", index)
 g = TitanFactory.open(props)
 groovy.grape.Grape.grab(group:'org.wikidata', module:'gremlin', version:'0.0.1-SNAPSHOT')
+import org.wikidata.gremlin.*;
 w = org.wikidata.gremlin.ConsoleInit.init(this)
 propLoader = new org.wikidata.gremlin.DataLoader(g, false)
 dataLoader = new org.wikidata.gremlin.DataLoader(g, true)
 q = new org.wikidata.gremlin.QueryEngine(g)
-import org.wikidata.gremlin.*;

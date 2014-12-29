@@ -15,6 +15,7 @@ import org.apache.commons.lang.SerializationUtils
 import java.security.MessageDigest
 import org.joda.time.format.*;
 import org.joda.time.*;
+import com.thinkaurelius.titan.core.TitanTransaction;
 
 /**
  * Loading data from external format (e.g. JSON) into the database
@@ -134,8 +135,9 @@ class Loader {
 		  case 'wikibase-property':
 		  case 'commonsMedia':     return String.class
 		  case 'globe-coordinate': return Geoshape.class
-		  // TODO: which class we have to use here? Maybe BigInteger?
-		  case 'quantity':         return String.class
+		  // For now, using Double, if we discover the precision is not enough, we'll 
+		  // have to look for better solution
+		  case 'quantity':         return Double.class
 		  case 'time':             return Long.class
 		  default:
 		  	return Object.class
@@ -214,7 +216,7 @@ class Loader {
     if ( v ) {
       return v.next()
     }
-
+	
     return g.addVertex([wikibaseId: id, stub: true])
   }
 
@@ -519,7 +521,7 @@ class Loader {
 		    case 'commonsMedia':     return value
 		    case 'globe-coordinate': return extractPropertyValueFromGlobeCoordinate(value)
 		    case 'monolingualtext':  return "${value.language}:${value.text}".toString()
-		    case 'quantity':         return value.amount
+		    case 'quantity':         return value.amount as double
 		    case 'string':           return value
 		    case 'time':             return extractPropertyValueFromTime(value.time)
 		    case 'url':              return value
@@ -601,7 +603,7 @@ class Loader {
 	  if(dataType != Object.class) {
 		  // add indexes for Value properties
 		  s.addIndex(mgmt, "by_"+name, Edge.class, [prop])
-		  if(label && dataType != Geoshape.class) {
+		  if(label && dataType != Geoshape.class && dataType != Double.class) {
 			  def edge = mgmt.getEdgeLabel(label)
 			  s.addVIndex(mgmt, edge, "by_"+name, prop)
 		  }
@@ -645,10 +647,7 @@ class Loader {
 	  if(!prop) {
 		prop = mgmt.makePropertyKey(linkName).dataType(String.class).cardinality(Cardinality.SET).make()
 	  }
-	  def prop2 = mgmt.getPropertyKey(linkName+"_")
-	  if(!prop2) {
-		  prop2 = s.addProperty(mgmt, linkName+"_", String.class)
-	  }
+	  prop2 = s.addProperty(mgmt, linkName+"_", String.class)
 	  s.addIndex(mgmt, "by_"+linkName, Vertex.class, [prop])
 	  if(Schema.USE_ELASTIC) {
 		  // Add Elastic field to Elastic index
