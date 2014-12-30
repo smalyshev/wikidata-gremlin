@@ -40,9 +40,9 @@ import org.apache.commons.lang.RandomStringUtils
 //}
 
 class DomainSpecificLanguage {
-  final Loader loader
+  final Loader loader = null
 
-  DomainSpecificLanguage(Loader loader) {
+  DomainSpecificLanguage(Loader loader = null) {
     this.loader = loader
   }
 
@@ -52,16 +52,26 @@ class DomainSpecificLanguage {
 	}
     Gremlin.addStep('wd')
     Graph.metaClass.wd = { id ->
-      loader.byId(id)
+      if(loader) { 
+		  loader.byId(id) 
+	  }
       return delegate.V('wikibaseId', id)
     }
     Gremlin.addStep('refresh')
     Pipe.metaClass.refresh = {
-      delegate.sideEffect{loader.byVertex(it)}
+		if(loader) {
+			delegate.sideEffect{loader.byVertex(it)}
+		} else {
+			delegate
+		}
     }
     Gremlin.addStep('reload')
     Pipe.metaClass.reload = {
-      delegate.sideEffect{loader.byVertex(it, true)}
+		if(loader) {
+			delegate.sideEffect{loader.byVertex(it, true)}
+		} else {
+			delegate
+		}
     }
     Gremlin.addStep('isA')
     Pipe.metaClass.isA = { id ->
