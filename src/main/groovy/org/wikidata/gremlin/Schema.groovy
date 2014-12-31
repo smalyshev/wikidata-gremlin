@@ -137,12 +137,12 @@ class Schema {
   def setupConstantData() {
     def changed = false
     if (!g.V('specialValueNode', 'unknown')) {
-      logger.info "Adding specialValueNode: 'unknown'"
+      log.info "Adding specialValueNode: 'unknown'"
       changed = true
       g.addVertex([specialValueNode: 'unknown', stub: false])
     }
     if (!g.V('specialValueNode', 'novalue')) {
-      logger.info "Adding specialValueNode: 'novalue'"
+      log.info "Adding specialValueNode: 'novalue'"
       changed = true
       g.addVertex([specialValueNode: 'novalue', stub: false])
     }
