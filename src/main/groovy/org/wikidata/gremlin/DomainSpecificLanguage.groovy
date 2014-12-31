@@ -151,7 +151,7 @@ class DomainSpecificLanguage {
 	Pipe.metaClass.treeFind = { String id, String... outs ->
 		def mark = delegate.randomMark()
 		delegate.ifThenElse{it.isA(id)}{it}{
-			it.as(mark).out(*outs).refresh().loop(mark){it.loops < 20 && !it.object.isA(id) && it.object.out(*outs).hasNext() }
+			it.as(mark).out(*outs).loop(mark){it.loops < 20 && !it.object.isA(id) && it.object.out(*outs).hasNext() }
 				.filter{it.isA(id)}.dedup()
 		}
 
