@@ -12,6 +12,7 @@ class ConsoleInit extends RexsterInit {
 	private ConsoleInit(script) {
 		super()
 		this.script = script
+		script.random = new Random()
 	}
 
 	static ConsoleInit init(script) {
