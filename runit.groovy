@@ -7,6 +7,6 @@ g = TitanFactory.open(props)
 groovy.grape.Grape.grab(group:'org.wikidata', module:'gremlin', version:'0.0.1-SNAPSHOT')
 import org.wikidata.gremlin.*;
 w = org.wikidata.gremlin.ConsoleInit.init(this)
-propLoader = new org.wikidata.gremlin.DataLoader(g, false)
+propLoader = new org.wikidata.gremlin.DataLoader(g, false).failOnError(true)
 dataLoader = new org.wikidata.gremlin.DataLoader(g, true)
 q = new org.wikidata.gremlin.QueryEngine(g)

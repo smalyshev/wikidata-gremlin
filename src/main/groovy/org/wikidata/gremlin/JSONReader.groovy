@@ -9,14 +9,14 @@ class JSONReader {
 	private def container
 	private def stack
 	private def key
-	
+
 	JSONReader(Reader input) {
 		this.lexer = new JsonLexer(input)
 		this.started = false
 		this.container = null
 		this.stack = []
 	}
-	
+
 	private def addToContainer(item)
 	{
 		if(key == false) {
@@ -26,7 +26,7 @@ class JSONReader {
 		}
 		return item
 	}
-	
+
 	public def getNextItem()
 	{
 		def t = lexer.nextToken()
@@ -45,17 +45,17 @@ class JSONReader {
 				// we're done, yay!
 				return null
 			}
-			
+
 			if(t.type == JsonTokenType.COMMA) {
 				// ok, next one
 				t = lexer.nextToken()
 			}
-		
+
 			// only accept objects as items for now
 			assert t.type == JsonTokenType.OPEN_CURLY
 			container = [:]
 			key = true
-		
+
 			while(t = lexer.nextToken()) {
 				switch(t.type) {
 					case JsonTokenType.OPEN_BRACKET:
@@ -84,7 +84,7 @@ class JSONReader {
 						if(key != false) {
 							// reset - expecting key again
 							key = true
-						} 
+						}
 						break;
 					default:
 						if(key == false) {
@@ -92,7 +92,7 @@ class JSONReader {
 						} else if(key == true) {
 							// expecting key
 							assert t.type == JsonTokenType.STRING
-							key = t.value 
+							key = t.value
 							// consume colon
 							t = lexer.nextToken()
 							assert t.type == JsonTokenType.COLON

@@ -19,12 +19,12 @@ class DataLoader {
 	private int skipLines = 0
 	private boolean failOnError = false
 	private int processedNum = 0
-	
+
 	DataLoader(Graph g, boolean ignore_props = false) {
 		this.g = g
 		this.loader = new org.wikidata.gremlin.Loader(g, ignore_props)
 	}
-	
+
 	public DataLoader setReaders(int r)
 	{
 		numReaders = r
@@ -36,35 +36,35 @@ class DataLoader {
 		myNum = r
 		return this
 	}
-	
-	public DataLoader file(String f) 
+
+	public DataLoader file(String f)
 	{
 		fileName = f
 		gzipped = false
 		return this
 	}
-	
-	public DataLoader gzipFile(String f) 
+
+	public DataLoader gzipFile(String f)
 	{
 		fileName = f
 		gzipped = true
 		return this
 	}
-	
-	public DataLoader setLines(int l) 
+
+	public DataLoader setLines(int l)
 	{
 		LINES_PER_COMMIT = l
 		return this
 	}
-	
+
 	public DataLoader failOnError(boolean f=true)
 	{
 		failOnError = f
 		return this
 	}
-	
+
 	protected void initStream() {
-		def input 
+		def input
 		if(gzipped) {
 			input = new java.util.zip.GZIPInputStream(new FileInputStream(fileName))
 		} else {
@@ -72,7 +72,7 @@ class DataLoader {
 		}
 		stream = new LineNumberReader(new InputStreamReader(input, "UTF-8"))
 	}
-	
+
 	protected void initFiles() {
 		if(processed) {
 			return
@@ -81,7 +81,7 @@ class DataLoader {
 		rejects = new File("rejects.${basename}.${numReaders}.${myNum}.json")
 		processed = new File("processed.${basename}.${numReaders}.${myNum}")
 	}
-	
+
 	public DataLoader recover()
 	{
 		initFiles()
@@ -93,7 +93,13 @@ class DataLoader {
 		println "Recovery: advancing line number by $processedNum"
 		return this
 	}
-	
+
+	public DataLoader batch(val = true)
+	{
+		this.loader.setBatch(val)
+		this
+	}
+
 	public void load(max) {
 		initStream()
 		initFiles()
@@ -120,7 +126,7 @@ class DataLoader {
 			if(line[-1] == ',') {
    				line = line[0..-2]
    		 	}
-			
+
 			try {
 				def item = json.parseText(line)
 	   		 	if(!item) {
@@ -153,7 +159,7 @@ class DataLoader {
 		g.commit()
 		println "Processed $realLines lines, failed $failedLines"
 	}
-	
+
 	public void processClaims(max, Closure c) {
 		initStream()
 		initRejects()
@@ -174,7 +180,7 @@ class DataLoader {
 			if(line[-1] == ',') {
    				line = line[0..-2]
    		 	}
-			
+
 			def item = json.parseText(line)
    		 	if(!item) {
 	   			 break

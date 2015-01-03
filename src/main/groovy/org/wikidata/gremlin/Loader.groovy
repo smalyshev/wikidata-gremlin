@@ -3,25 +3,33 @@ package org.wikidata.gremlin
 // Apache 2 Licensed
 
 import com.tinkerpop.blueprints.Graph
-
 import com.tinkerpop.blueprints.Vertex
 import com.tinkerpop.blueprints.Edge
 import com.tinkerpop.blueprints.Direction
 import com.thinkaurelius.titan.core.Order
+
 import java.text.SimpleDateFormat
+
 import com.thinkaurelius.titan.core.attribute.Geoshape
 import com.thinkaurelius.titan.core.Cardinality
+
 import org.apache.commons.lang.SerializationUtils
+
 import java.security.MessageDigest
+
 import org.joda.time.format.*;
 import org.joda.time.*;
+
 import com.thinkaurelius.titan.core.TitanTransaction;
+import com.tinkerpop.blueprints.util.wrappers.batch.BatchGraph;
 
 /**
  * Loading data from external format (e.g. JSON) into the database
  */
 class Loader {
   final Graph g
+  private boolean batch = false
+  private BatchGraph bgraph = null
   /**
    * Should we skip loading properties?
    */
@@ -31,6 +39,18 @@ class Loader {
   Loader(Graph g, skip_props = true) {
     this.g = g
 	this.skip_props = skip_props
+  }
+
+  public void setBatch(boolean val = true) {
+	  batch = val
+	  if(batch) {
+		  bgraph = new BatchGraph(g, VertexIDType.STRING, 1000)
+		  bgraph.setVertexIdKey("wikibaseId")
+		  bgraph.setLoadingFromScratch(false)
+		  skip_props = true
+	  } else {
+	  	  bgraph = null
+	  }
   }
 
   /**
@@ -77,7 +97,6 @@ class Loader {
       def v = getOrCreateVertex(id)
 	  def isNew = false
 	  if(v['stub']) {
-		  v['stub'] = false
 		  println "Creating $id"
 		  isNew = true
 	  } else {
@@ -99,6 +118,9 @@ class Loader {
 	  }
 	  if(item['lastrevid']) {
 		  v['lastrevid'] = item['lastrevid']
+	  }
+	  if(isNew) {
+		  v['stub'] = false
 	  }
   	  if(isProperty) {
 			g.commit()
@@ -135,7 +157,7 @@ class Loader {
 		  case 'wikibase-property':
 		  case 'commonsMedia':     return String.class
 		  case 'globe-coordinate': return Geoshape.class
-		  // For now, using Double, if we discover the precision is not enough, we'll 
+		  // For now, using Double, if we discover the precision is not enough, we'll
 		  // have to look for better solution
 		  case 'quantity':         return Double.class
 		  case 'time':             return Long.class
@@ -190,19 +212,29 @@ class Loader {
    */
   private void checkProperty(item)
   {
-	  // According to new data model, all claims are edges
+	  // According to the data model, all claims are edges
 	  initEdge(item['id'])
 	  // For value properties, we also need the value prop
-	  if(item['datatype'] && item['datatype'] != 'wikibase-item' && item['datatype'] != 'wikibase-property') {
-		  initProperty(getValueName(item['id']), getDataType(item['datatype']), item['id'])
-		  // for sub-values
-		  if(item['datatype'] != 'string') {
-			  initProperty(getAllValuesName(getValueName(item['id'])))
-			  initProperty(getAllValuesName(getQualifierName(item['id'])))
-		  }
+	  initProperty(getValueName(item['id']), getDataType(item['datatype']), item['id'])
+	  initProperty(getQualifierName(item['id']), getDataType(item['datatype']), item['id'])
+	  if(item['datatype'] && item['datatype'] != 'wikibase-item'
+		  && item['datatype'] != 'wikibase-property' && item['datatype'] != 'string') {
+		  initProperty(getAllValuesName(getValueName(item['id'])))
+		  initProperty(getAllValuesName(getQualifierName(item['id'])))
 	  }
 
-	  initProperty(getQualifierName(item['id']), getDataType(item['datatype']), item['id'])
+  }
+
+  /**
+   * Add vertex to batch graph
+   */
+  private def batchGetVertex(id) {
+		def v = bgraph.getVertex(id)
+		if(!v) {
+			v = bgraph.addVertex(id)
+			v.setProperty("stub", true)
+		}
+		return v
   }
 
   /**
@@ -212,11 +244,14 @@ class Loader {
    */
   private def getOrCreateVertex(id)
   {
+	if(batch) {
+		return batchGetVertex(id)
+	}
     def v = g.V('wikibaseId', id)
     if ( v ) {
       return v.next()
     }
-	
+
     return g.addVertex([wikibaseId: id, stub: true])
   }
 
@@ -247,6 +282,9 @@ class Loader {
    */
   private void updateLabels(v, item, isNew)
   {
+	if(batch && !isNew) {
+		throw new RuntimeException("Cannot update in batch mode!")
+	}
 	def hash = getHash(item, 'labels')
 	if(!isNew && v.contentHash == hash) {
 		// hash did not change, we're done here
@@ -301,6 +339,7 @@ class Loader {
    */
   private void updateClaims(v, item, isNew) {
 	def claimsById = [:]
+	def linkCache = [:]
     for (claimsOnProperty in item.claims) {
 		if(!claimsOnProperty.value.size()) {
 			// empty claim, ignore
@@ -320,6 +359,9 @@ class Loader {
 		}
 	}
 	if(!isNew) {
+		if(batch && !isNew) {
+			throw new RuntimeException("Cannot update in batch mode!")
+		}
 		for(cl in v.outE.has('edgeType', 'claim')) {
 			if(!(cl.contentHash in claimsById)) {
 				def prop = cl.getProperty('property')
@@ -356,7 +398,7 @@ class Loader {
 			continue
 		}
 		for(eclaim in expand(claim.value)) {
-			updateClaim(v, eclaim, claim.key)
+			updateClaim(v, eclaim, claim.key, linkCache)
 		}
 	}
   }
@@ -466,6 +508,14 @@ class Loader {
   	if(!outgoing) {
   		return null
   	}
+	// Here is the strange thing: v.outE() is slow but v.outE('claim') is fast even though they return the same
+	// So we provide edge for all claims so we could fetch them e.g. for deleting old ones
+	// TODO: may not be needed anymore if we can use contentHash + property
+	def claimC = v.addEdge('claim', outgoing)
+	claimC.setProperty('wikibaseId', claim.id)
+	claimC.setProperty('property', data.property)
+	claimC.setProperty('contentHash', contentHash)
+
 	//println "Updating claim ${claim.id}"
 	def claimE = v.addEdge(data.property, outgoing)
 	claimE.setProperty('edgeType', 'claim')
@@ -474,34 +524,47 @@ class Loader {
 	claimE.setProperty('wikibaseId', claim.id)
 	claimE.setProperty('property', data.property)
 
-	// Here is the strange thing: v.outE() is slow but v.outE('claim') is fast even though they return the same
-	// So we provide edge for all claims so we could fetch them e.g. for deleting old ones
-	def claimC = v.addEdge('claim', outgoing)
-	claimC.setProperty('wikibaseId', claim.id)
-	claimC.setProperty('property', data.property)
-	claimC.setProperty('contentHash', contentHash)
-
-	if(!isValue && outgoing.wikibaseId) {
-		def lname = getLinkName(data.property)
-  	  // Create reverse index for edges to allow faster reverse lookups for queries like "get all humans"
-  	  // See discussion: https://groups.google.com/forum/#!topic/aureliusgraphs/-3QQIWaT2H8
-	  if(!v.getProperties(lname).any{it.getValue() == outgoing.wikibaseId}) {
-	    v.addProperty(lname, outgoing.wikibaseId)
-	  }
-	  v.setProperty(lname+"_", v[lname].join(' '))
-	}
+    if(claim.qualifiers) {
+	  addQualifiers(claimE, claim.qualifiers)
+    }
 
 	if(isValue && value) {
-		// TODO: choose which one is better here
 		claimE.setProperty(getValueName(data.property), value)
 		if(data.datatype != 'string' ) {
 			addAllValues(data.datavalue.value, getValueName(data.property), claimE)
 		}
+	} else {
+		// if it's a link, we can put it in value property for faster lookup
+		// Since vertex and its edges are stored together but going to other side
+		// requires loading another vertex
+		if(outgoing.wikibaseId) {
+			claimE.setProperty(getValueName(data.property), outgoing.wikibaseId)
+		}
 	}
-    if(claim.qualifiers) {
-	  // println "Adding qualifiers to $edge"
-	  addQualifiers(claimE, claim.qualifiers)
-    }
+
+	// The code is arranged so that all operations on claimE finish before anything else is done
+	// This is because of this comment in https://github.com/tinkerpop/blueprints/blob/master/blueprints-core/src/main/java/com/tinkerpop/blueprints/util/wrappers/batch/BatchGraph.java
+	// * An important limitation of BatchGraph is that edge properties can only be set immediately after the edge has been added.
+    // * If other vertices or edges have been created in the meantime, setting, getting or removing properties will throw
+    // * exceptions. This is done to avoid caching of edges which would require a great amount of memory.
+	// This is necessary only for BatchGraph
+	if(!isValue && outgoing.wikibaseId) {
+		def lname = getLinkName(data.property)
+		if(!linkCache[lname]) {
+			linkCache[lname] = [] as Set
+		}
+  	  // Create reverse index for edges to allow faster reverse lookups for queries like "get all humans"
+  	  // See discussion: https://groups.google.com/forum/#!topic/aureliusgraphs/-3QQIWaT2H8
+	  if(!(outgoing.wikibaseId in linkCache[lname])) {
+		  // We need the check above since despite being called SET, the property
+		  // would not accept the same value twice
+	    v.addProperty(lname, outgoing.wikibaseId)
+		linkCache[lname] << outgoing.wikibaseId
+  	    // This is the same in a form of a string, for ES to index since ES does not index SET properties
+	    v.setProperty(lname+"_", linkCache[lname].join(' '))
+	  }
+	}
+
 	return claimE
   }
 
@@ -599,7 +662,6 @@ class Loader {
 	  def s = new Schema(g)
 	  def mgmt = g.getManagementSystem()
 	  def prop = s.addProperty(mgmt, name, dataType)
-      /* TODO: we should use a mixed index here to support range queries but those need Elasticsearch */
 	  if(dataType != Object.class) {
 		  // add indexes for Value properties
 		  s.addIndex(mgmt, "by_"+name, Edge.class, [prop])
@@ -607,8 +669,8 @@ class Loader {
 			  def edge = mgmt.getEdgeLabel(label)
 			  s.addVIndex(mgmt, edge, "by_"+name, prop)
 		  }
-		  if(Schema.USE_ELASTIC && label) {
-			  def index = mgmt.getGraphIndex('by_values')
+		  def index = mgmt.getGraphIndex('by_values')
+		  if(index) {
 			  try {
 				  mgmt.addIndexKey(index, prop, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',name))
 			  } catch(IllegalArgumentException e) {
@@ -637,21 +699,20 @@ class Loader {
 	  s.addVIndex(mgmt, label, "by_rank"+name, rank)
 	  s.addVIndex(mgmt, label, "by_hash"+name, hash, wikibaseId)
 	  s.addVIndex(mgmt, label, "by_type"+name, etype)
-	  // TODO: also index by values/Qs?
 
 	  // Create reverse index for edges to allow faster reverse lookups for queries like "get all humans"
 	  // See discussion: https://groups.google.com/forum/#!topic/aureliusgraphs/-3QQIWaT2H8
 	  def linkName = getLinkName(name)
 	  def prop = mgmt.getPropertyKey(linkName)
-	  // This one stringified for Elastic
 	  if(!prop) {
 		prop = mgmt.makePropertyKey(linkName).dataType(String.class).cardinality(Cardinality.SET).make()
 	  }
-	  prop2 = s.addProperty(mgmt, linkName+"_", String.class)
+	  // This one stringified for Elastic
+	  def prop2 = s.addProperty(mgmt, linkName+"_", String.class)
 	  s.addIndex(mgmt, "by_"+linkName, Vertex.class, [prop])
-	  if(Schema.USE_ELASTIC) {
-		  // Add Elastic field to Elastic index
-		  def mindex = mgmt.getGraphIndex('by_links')
+	  // Add Elastic field to Elastic index
+	  def mindex = mgmt.getGraphIndex('by_links')
+	  if(mindex) {
 		  try {
 			  mgmt.addIndexKey(mindex, prop2, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',linkName+"_"))
 		  } catch(IllegalArgumentException e) {

@@ -52,8 +52,8 @@ class DomainSpecificLanguage {
 	}
     Gremlin.addStep('wd')
     Graph.metaClass.wd = { id ->
-      if(loader) { 
-		  loader.byId(id) 
+      if(loader) {
+		  loader.byId(id)
 	  }
       return delegate.V('wikibaseId', id)
     }

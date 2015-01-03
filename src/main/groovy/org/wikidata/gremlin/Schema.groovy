@@ -113,7 +113,7 @@ class Schema {
     log.info("Creating mixed index {}", name)
     idx = mgmt.buildIndex(name, type)
     for (k in keys) {
-      idx = idx.addKey(k)
+      idx = idx.addKey(k, com.thinkaurelius.titan.core.schema.Parameter.of('mapped-name',k.getName()))
     }
     try {
       idx.buildMixedIndex("search")

@@ -8,7 +8,7 @@ class RexsterInit
 	{
 		return new RexsterInit().setup()
 	}
-	
+
 	protected def setup()
 	{
 		getDSL().setup()
