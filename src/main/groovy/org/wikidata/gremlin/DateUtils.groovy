@@ -102,7 +102,7 @@ class DateUtils {
 	private final static def printForm = ISODateTimeFormat.dateTimeNoMillis().withZone(DateTimeZone.UTC)
 	/**
 	 * Returns ISO8601 (extended) representation of the date
-	 * @return
+	 * @return String
 	 */
 	public static String asString(long seconds) {
 		if(!javaDate(seconds)) {

@@ -40,6 +40,9 @@ class Loader {
 	this.skip_props = skip_props
   }
 
+  /**
+   * Set if this loader is a batch loader
+   */
   public void setBatch(boolean val = true) {
 	  batch = val
 	  if(batch) {
@@ -430,7 +433,12 @@ class Loader {
 	  }
   }
    
-   private def getSpecialNode(label)
+   /**
+    * Fetch special node from the graph
+    * @param String label
+    * @return Vertex
+    */
+   private def getSpecialNode(String label)
    {
 	   if(!(label in specNodes)) {
 		   if(!batch) {
