@@ -19,6 +19,7 @@ class DataLoader {
 	private int skipLines = 0
 	private boolean failOnError = false
 	private int processedNum = 0
+	private boolean batch = false
 
 	DataLoader(Graph g, boolean ignore_props = false) {
 		this.g = g
@@ -96,6 +97,7 @@ class DataLoader {
 
 	public DataLoader batch(val = true)
 	{
+		batch = val
 		this.loader.setBatch(val)
 		this
 	}
@@ -149,7 +151,9 @@ class DataLoader {
 			realLines++;
 			(0..numReaders-1).each() { line = stream.readLine() }
 			if(i != 0 && i % LINES_PER_COMMIT == 0) {
-				g.commit()
+				if(!batch) {
+					g.commit()
+				}
 				println "Committed on row $i"
 				def fw = new FileWriter(processed)
 				fw.write(i as String)

@@ -19,9 +19,7 @@ import java.security.MessageDigest
 
 import org.joda.time.format.*;
 import org.joda.time.*;
-
-import com.thinkaurelius.titan.core.TitanTransaction;
-import com.tinkerpop.blueprints.util.wrappers.batch.BatchGraph;
+import com.tinkerpop.blueprints.util.wrappers.batch.VertexIDType;
 
 /**
  * Loading data from external format (e.g. JSON) into the database
@@ -29,12 +27,13 @@ import com.tinkerpop.blueprints.util.wrappers.batch.BatchGraph;
 class Loader {
   final Graph g
   private boolean batch = false
-  private BatchGraph bgraph = null
+  private TitanBatchGraph bgraph = null
   /**
    * Should we skip loading properties?
    */
   private boolean skip_props
   private def currentVertex
+  private def specNodes = [:]
 
   Loader(Graph g, skip_props = true) {
     this.g = g
@@ -44,7 +43,7 @@ class Loader {
   public void setBatch(boolean val = true) {
 	  batch = val
 	  if(batch) {
-		  bgraph = new BatchGraph(g, VertexIDType.STRING, 1000)
+		  bgraph = new TitanBatchGraph(g, VertexIDType.STRING, 100000)
 		  bgraph.setVertexIdKey("wikibaseId")
 		  bgraph.setLoadingFromScratch(false)
 		  skip_props = true
@@ -283,7 +282,8 @@ class Loader {
   private void updateLabels(v, item, isNew)
   {
 	if(batch && !isNew) {
-		throw new RuntimeException("Cannot update in batch mode!")
+		println "Cannot update in batch mode, skipping..."
+		return
 	}
 	def hash = getHash(item, 'labels')
 	if(!isNew && v.contentHash == hash) {
@@ -359,8 +359,9 @@ class Loader {
 		}
 	}
 	if(!isNew) {
-		if(batch && !isNew) {
-			throw new RuntimeException("Cannot update in batch mode!")
+		if(batch) {
+			println "Cannot update in batch mode, skipping..."
+			return
 		}
 		for(cl in v.outE.has('edgeType', 'claim')) {
 			if(!(cl.contentHash in claimsById)) {
@@ -428,6 +429,18 @@ class Loader {
 		  }
 	  }
   }
+   
+   private def getSpecialNode(label)
+   {
+	   if(!(label in specNodes)) {
+		   if(!batch) {
+	   			specNodes[label] = g.V('specialValueNode', label).next()
+		   } else {
+		   		specNodes[label] = batchGetVertex(label)
+		   }
+	   } 
+	   specNodes[label] 
+   }
 
    /**
     * Get target vertex for the claim
@@ -449,17 +462,17 @@ class Loader {
 			if(value == null) {
 				// if we are supposed to have a specific value, but could not find it
 				// we produce "somevalue" link instead
-				outgoing = g.V('specialValueNode', 'unknown').next()
+				outgoing = getSpecialNode('unknown')
 			} else {
 				outgoing = getOrCreateVertex(data.property)
 			}
   		}
         break
       case 'somevalue':
-        outgoing = g.V('specialValueNode', 'unknown').next()
+        outgoing = getSpecialNode('unknown')
         break
       case 'novalue':
-        outgoing = g.V('specialValueNode', 'novalue').next()
+        outgoing = getSpecialNode('novalue')
         break
       default:
         println "Unknown snaktype on ${v.wikibaseId}:  ${claim.snaktype}.  Skipping."
@@ -498,7 +511,7 @@ class Loader {
    * 				(for cloned claims from expand, this is the hash of the whole claim)
    * @return Claim edge
    */
-  private def updateClaim(Vertex v, claim, contentHash)
+  private def updateClaim(Vertex v, claim, contentHash, linkCache)
   {
 	def data = claim.mainsnak
 	def value = extractPropertyValueFromClaim(data)
@@ -537,7 +550,7 @@ class Loader {
 		// if it's a link, we can put it in value property for faster lookup
 		// Since vertex and its edges are stored together but going to other side
 		// requires loading another vertex
-		if(outgoing.wikibaseId) {
+		if(!isValue && outgoing.wikibaseId) {
 			claimE.setProperty(getValueName(data.property), outgoing.wikibaseId)
 		}
 	}

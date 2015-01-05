@@ -139,12 +139,12 @@ class Schema {
     if (!g.V('specialValueNode', 'unknown')) {
       log.info "Adding specialValueNode: 'unknown'"
       changed = true
-      g.addVertex([specialValueNode: 'unknown', stub: false])
+      g.addVertex([specialValueNode: 'unknown', stub: false, 'wikibaseId':'unknown'])
     }
     if (!g.V('specialValueNode', 'novalue')) {
       log.info "Adding specialValueNode: 'novalue'"
       changed = true
-      g.addVertex([specialValueNode: 'novalue', stub: false])
+      g.addVertex([specialValueNode: 'novalue', stub: false, 'wikibaseId':'novalues'])
     }
     if (changed && g.getFeatures().supportsTransactions) {
       g.commit()
