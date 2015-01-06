@@ -7,6 +7,8 @@ import com.tinkerpop.pipes.AbstractPipe;
 import com.tinkerpop.pipes.Pipe;
 import com.tinkerpop.pipes.transform.TransformPipe;
 import org.apache.commons.lang.RandomStringUtils
+import groovy.util.logging.Slf4j
+
 // Apache 2 Licensed
 
 //public class TreeOutPipe2 extends AbstractPipe<Vertex,Vertex> implements TransformPipe<Vertex, Vertex> {
@@ -39,6 +41,7 @@ import org.apache.commons.lang.RandomStringUtils
 //	}
 //}
 
+@Slf4j
 class DomainSpecificLanguage {
   final Loader loader = null
 
@@ -47,6 +50,7 @@ class DomainSpecificLanguage {
   }
 
   void setup() {
+	log.info "Setting up domain specific language"
 	Pipe.metaClass.randomMark = {
 		RandomStringUtils.random(10, true, true)
 	}
