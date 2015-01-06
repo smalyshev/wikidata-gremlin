@@ -105,6 +105,7 @@ class DataLoader {
 	public void load(max) {
 		initStream()
 		initFiles()
+		loader.resetClaims()
 		def json = new JsonSlurper() //.setType(JsonParserType.INDEX_OVERLAY )
 		String line = stream.readLine()
 		if(line[0] == '[') {
@@ -161,7 +162,7 @@ class DataLoader {
 			}
 		}
 		g.commit()
-		println "Processed $realLines lines, failed $failedLines"
+		println "Processed $realLines lines, failed $failedLines, processed ${loader.getClaims()} claims"
 	}
 
 	public void processClaims(max, Closure c) {

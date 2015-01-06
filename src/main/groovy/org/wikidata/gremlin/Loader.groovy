@@ -34,6 +34,7 @@ class Loader {
   private boolean skip_props
   private def currentVertex
   private def specNodes = [:]
+  private long claims = 0
 
   Loader(Graph g, skip_props = true) {
     this.g = g
@@ -529,13 +530,14 @@ class Loader {
   	if(!outgoing) {
   		return null
   	}
+	claims++;
 	// Here is the strange thing: v.outE() is slow but v.outE('claim') is fast even though they return the same
 	// So we provide edge for all claims so we could fetch them e.g. for deleting old ones
 	// TODO: may not be needed anymore if we can use contentHash + property
-	def claimC = v.addEdge('claim', outgoing)
-	claimC.setProperty('wikibaseId', claim.id)
-	claimC.setProperty('property', data.property)
-	claimC.setProperty('contentHash', contentHash)
+//	def claimC = v.addEdge('claim', outgoing)
+//	claimC.setProperty('wikibaseId', claim.id)
+//	claimC.setProperty('property', data.property)
+//	claimC.setProperty('contentHash', contentHash)
 
 	//println "Updating claim ${claim.id}"
 	def claimE = v.addEdge(data.property, outgoing)
@@ -800,5 +802,13 @@ class Loader {
 		cit.qualifiers = it
 		cit
 	}
+  }
+  
+  public long getClaims() {
+	  return claims;
+  }
+  
+  public void resetClaims() {
+	  claims = 0
   }
 }

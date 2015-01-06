@@ -139,11 +139,13 @@ class Schema {
     if (!g.V('specialValueNode', 'unknown')) {
       log.info "Adding specialValueNode: 'unknown'"
       changed = true
+	  // wikibaseId is needed for Batch loading
       g.addVertex([specialValueNode: 'unknown', stub: false, 'wikibaseId':'unknown'])
     }
     if (!g.V('specialValueNode', 'novalue')) {
       log.info "Adding specialValueNode: 'novalue'"
       changed = true
+	  // wikibaseId is needed for Batch loading
       g.addVertex([specialValueNode: 'novalue', stub: false, 'wikibaseId':'novalues'])
     }
     if (changed && g.getFeatures().supportsTransactions) {
