@@ -9,4 +9,5 @@ import org.wikidata.gremlin.*;
 w = org.wikidata.gremlin.ConsoleInit.init(this)
 propLoader = new org.wikidata.gremlin.DataLoader(g, false).failOnError(true)
 dataLoader = new org.wikidata.gremlin.DataLoader(g, true)
+batchLoader = new org.wikidata.gremlin.DataLoader(g, true).batch(true).failOnError(true)
 q = new org.wikidata.gremlin.QueryEngine(g)

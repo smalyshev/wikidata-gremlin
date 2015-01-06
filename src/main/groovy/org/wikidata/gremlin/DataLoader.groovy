@@ -4,7 +4,9 @@ import java.io.Reader
 import com.tinkerpop.blueprints.Graph
 import groovy.json.*
 import com.thinkaurelius.titan.core.TitanException
+import groovy.util.logging.Slf4j
 
+@Slf4j
 class DataLoader {
 	private int LINES_PER_COMMIT = 1000
 	final Loader loader
@@ -91,7 +93,7 @@ class DataLoader {
 			return this
 		}
 		processedNum = processed.text as int;
-		println "Recovery: advancing line number by $processedNum"
+		log.info "Recovery: advancing line number by $processedNum"
 		return this
 	}
 
@@ -133,17 +135,17 @@ class DataLoader {
 			try {
 				def item = json.parseText(line)
 	   		 	if(!item) {
-				  println "Bad line $i, skipping\n"
+				  log.warn "Bad line $i, skipping\n"
  	   			  break
 	   		 	}
 	   		 	loader.loadFromItem(item)
 			} catch(TitanException e) {
 				// it's bad and for once it's not our fault. Let's stop for now
-				println "Titan exception: $e. Bailing out..."
+				log.error "Titan exception: $e. Bailing out..."
 				e.printStackTrace()
 				break;
 			} catch(e) {
-				println "Importing line ${stream.getLineNumber()} failed: $e"
+				log.warn "Importing line ${stream.getLineNumber()} failed: $e"
 				rejects << line
 				rejects << "\n"
 				failedLines++;
@@ -155,14 +157,14 @@ class DataLoader {
 				if(!batch) {
 					g.commit()
 				}
-				println "Committed on row $i"
+				log.info "Committed on row $i"
 				def fw = new FileWriter(processed)
 				fw.write(i as String)
 				fw.close()
 			}
 		}
 		g.commit()
-		println "Processed $realLines lines, failed $failedLines, processed ${loader.getClaims()} claims"
+		log.info "Processed $realLines lines, failed $failedLines, processed ${loader.getClaims()} claims"
 	}
 
 	public void processClaims(max, Closure c) {
@@ -206,7 +208,7 @@ class DataLoader {
 */
 			(0..numReaders-1).each() { line = stream.readLine() }
 			if(i != 0 && i % LINES_PER_COMMIT == 0) {
-				println "Processed row $i"
+				log.info "Processed row $i"
 				def fw = new FileWriter(processed)
 				fw.write(i as String)
 				fw.close()

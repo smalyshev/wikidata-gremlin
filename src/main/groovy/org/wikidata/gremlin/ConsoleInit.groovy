@@ -38,25 +38,25 @@ class ConsoleInit extends RexsterInit {
 		// Try initializing like we're in rexster command line console.
 		try {
 			if (script.g) {
-				println "Initialized for Rexster Web Console"
+				log.info "Initialized for Rexster Web Console"
 			}
 		} catch (MissingPropertyException e) {
 			// OK .g isn't defined.  Go to next option
-			println "script.g not found, proceeding..."
+			log.info "script.g not found, proceeding..."
 		}
 		try {
 			script.g = script.rexster.getGraph('wikidata')
-			println "Initialized for Rexster Console"
+			log.info "Initialized for Rexster Console"
 		} catch (MissingPropertyException e) {
 			// OK .rexster isn't defined.  Go to next option
-			println "script.rexster not found, proceeding..."
+			log.info "script.rexster not found, proceeding..."
 		}
 		if(!script.g) {
 			try {
-				println "Initializing for Gremlin console"
+				log.info "Initializing for Gremlin console"
 				script.g = new TinkerGraph('wikidata', TinkerGraph.FileType.GRAPHSON)
 			} catch (Exception e) {
-				println "Something is wrong loading or creating the graph.  Here is the exception, good luck:"
+				log.error "Something is wrong loading or creating the graph.  Here is the exception, good luck:"
 				throw e
 			}
 		}
@@ -72,7 +72,7 @@ class ConsoleInit extends RexsterInit {
 			schema.setupSchema()
 			schema.setupConstantData()
 		} catch (Exception e) {
-			println "Something went wrong updating the schema.  Here is the exception, good luck:"
+			log.error "Something went wrong updating the schema.  Here is the exception, good luck:"
 			e.printStackTrace()
 			System.exit(1)
 		}
