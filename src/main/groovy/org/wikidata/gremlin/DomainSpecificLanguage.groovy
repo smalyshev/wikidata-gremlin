@@ -12,6 +12,7 @@ import groovy.util.logging.Slf4j
 // Apache 2 Licensed
 @Slf4j
 class DomainSpecificLanguage {
+  void setup() {
     log.info "Setting up domain specific language"
     Pipe.metaClass.randomMark = {
         RandomStringUtils.random(10, true, true)
