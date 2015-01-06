@@ -20,10 +20,12 @@ import java.security.MessageDigest
 import org.joda.time.format.*;
 import org.joda.time.*;
 import com.tinkerpop.blueprints.util.wrappers.batch.VertexIDType;
+import groovy.util.logging.Slf4j
 
 /**
  * Loading data from external format (e.g. JSON) into the database
  */
+@Slf4j
 class Loader {
   final Graph g
   private boolean batch = false
@@ -100,14 +102,14 @@ class Loader {
       def v = getOrCreateVertex(id)
 	  def isNew = false
 	  if(v['stub']) {
-		  println "Creating $id"
+		  log.info "Creating $id"
 		  isNew = true
 	  } else {
 	  	if(item['lastrevid'] && v['lastrevid'] && v['lastrevid'] > item['lastrevid']) {
-			  println "Ignoring update for $id - it's rev ${item['lastrevid']} and we already have ${v['lastrevid']}"
+			  log.info "Ignoring update for $id - it's rev ${item['lastrevid']} and we already have ${v['lastrevid']}"
 			  return
 		  }
-		  println "Updating $id"
+		  log.info "Updating $id"
 	  }
 	  currentVertex = v
 	  if(isProperty) {
@@ -137,9 +139,9 @@ class Loader {
    * @return HashMap
    */
   private def fetchEntity(id) {
-	  println "Fetching ${id} from Wikidata"
+	  log.info "Fetching ${id} from Wikidata"
 	  def text = new URL("http://www.wikidata.org/wiki/Special:EntityData/${id}.json").getText('UTF-8')
-	  //println "Loaded id $id, got this: "+groovy.json.JsonOutput.prettyPrint(text)
+	  log.debug "Loaded id $id, got this: "+groovy.json.JsonOutput.prettyPrint(text)
 	  def items = new groovy.json.JsonSlurper().parseText(text)
 	  return items.entities[ id ]
   }
@@ -286,7 +288,7 @@ class Loader {
   private void updateLabels(v, item, isNew)
   {
 	if(batch && !isNew) {
-		println "Cannot update in batch mode, skipping..."
+		log.info "Cannot update in batch mode, skipping..."
 		return
 	}
 	def hash = getHash(item, 'labels')
@@ -351,7 +353,7 @@ class Loader {
 		}
       	for (claim in claimsOnProperty.value) {
 	        if (claim.mainsnak == null) {
-	          println "${item.id}'s ${property} contains a claim without a mainSnak.  Skipping."
+	          log.debug "${item.id}'s ${property} contains a claim without a mainSnak.  Skipping."
 	          continue
 	        }
 			if (claim.rank == "deprecated") {
@@ -364,14 +366,14 @@ class Loader {
 	}
 	if(!isNew) {
 		if(batch) {
-			println "Cannot update in batch mode, skipping..."
+			log.info "Cannot update in batch mode, skipping..."
 			return
 		}
 		for(cl in v.outE.has('edgeType', 'claim')) {
 			if(!(cl.contentHash in claimsById)) {
 				def prop = cl.getProperty('property')
 				def target = cl.inV.next()
-				//println "Dropping old claim ${cl.wikibaseId}"
+				log.debug "Dropping old claim ${cl.wikibaseId}"
 				v.outE.has('contentHash', cl.contentHash).remove()
 				// update also the links
 				if(target.wikibaseId && target.wikibaseId[0] == 'Q'
@@ -484,7 +486,7 @@ class Loader {
         outgoing = getSpecialNode('novalue')
         break
       default:
-        println "Unknown snaktype on ${v.wikibaseId}:  ${claim.snaktype}.  Skipping."
+        log.info "Unknown snaktype on ${v.wikibaseId}:  ${claim.snaktype}.  Skipping."
         return null
       }
 	  return outgoing
@@ -506,7 +508,6 @@ class Loader {
 		  if(!it.value) {
 			  continue
 		  }
-		  //item[getValueName(property)+"_"+it.key] = it.value
 		  v[it.key] = it.value
 	  }
 	  item.setProperty(getAllValuesName(property), v)
@@ -539,7 +540,7 @@ class Loader {
 //	claimC.setProperty('property', data.property)
 //	claimC.setProperty('contentHash', contentHash)
 
-	//println "Updating claim ${claim.id}"
+	log.debug "Updating claim ${claim.id}"
 	def claimE = v.addEdge(data.property, outgoing)
 	claimE.setProperty('edgeType', 'claim')
 	claimE.setProperty('contentHash', contentHash)
@@ -614,11 +615,11 @@ class Loader {
 			case 'wikibase-property':    return allowLink?"P"+value['numeric-id']:null
 			case 'wikibase-item':    return allowLink?"Q"+value['numeric-id']:null
 		    default:
-		      println "Unknown datatype on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype}.  Skipping."
+		      log.info "Unknown datatype on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype}.  Skipping."
 		      return null
 	    }
 	} catch(Exception e) {
-		println "Value parsing failed on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype} with: $e"
+		log.info "Value parsing failed on ${getCurrentVertex()?.wikibaseId}: ${claim.datatype} with: $e"
 		return null
 	}
   }
@@ -648,7 +649,7 @@ class Loader {
   private long extractPropertyValueFromTime(String time) {
     def matches = time =~ timeFormat
     if (!matches) {
-      println "Error parsing date on ${getCurrentVertex()?.wikibaseId}:  ${time}.  Skipping."
+      log.warn "Error parsing date on ${getCurrentVertex()?.wikibaseId}:  ${time}.  Skipping."
       return null
     }
 	long y = matches[0][1] as long
@@ -761,11 +762,10 @@ class Loader {
 	def newresult
 	def newr
 	def order = claim['qualifiers-order'].clone()
+	log.trace "Processing ${claim.id} for ${claim.mainsnak.property}"
 	// P580 and P582 require special handling as a pair
-	//println "Processing ${claim.id} for ${claim.mainsnak.property}"
-	//println "Result is now ${result.size()}"
 	if(claim.qualifiers['P580'] && claim.qualifiers['P582'] && (claim.qualifiers['P580']?.size() > 1 || claim.qualifiers['P582']?.size() > 1)) {
-		//println "Processing qualifiers P580/2"
+		log.trace "Processing qualifiers P580/2"
 		order.removeAll(['P580', 'P582'])
 		newresult = []
 		for(i in 0..<claim.qualifiers['P580'].size()) {
@@ -779,10 +779,10 @@ class Loader {
 			}
 		}
 		result = newresult
-		//println "Result is now ${result.size()}"
+		log.trace "Result is now ${result.size()}"
 	}
   	for(qual in order) {
-		//println "Processing qualifier $qual"
+		log.trace "Processing qualifier $qual"
   		newresult = []
   		for(qitem in claim.qualifiers[qual]) {
   			for(r in result) {
@@ -792,7 +792,7 @@ class Loader {
   			}
   		}
   		result = newresult
-		//println "Result is now ${result.size()}"
+		log.trace "Result is now ${result.size()}"
   	}
   	if(result.size() == 1) {
 		return [claim]

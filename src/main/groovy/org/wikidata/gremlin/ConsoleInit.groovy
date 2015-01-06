@@ -3,9 +3,11 @@
 package org.wikidata.gremlin
 
 import groovy.lang.Closure;
+import groovy.util.logging.Slf4j;
 
 import com.tinkerpop.blueprints.impls.tg.TinkerGraph
 
+@Slf4j
 class ConsoleInit extends RexsterInit {
 	final protected def script
 
@@ -21,6 +23,7 @@ class ConsoleInit extends RexsterInit {
 
 	protected ConsoleInit setup()
 	{
+		log.info "Starting console setup..."
 		graph()
 		schema()
 		super.setup()
@@ -73,12 +76,6 @@ class ConsoleInit extends RexsterInit {
 			e.printStackTrace()
 			System.exit(1)
 		}
-	}
-
-	@Override
-	protected DomainSpecificLanguage getDSL()
-	{
-		return new DomainSpecificLanguage(new Loader(script.g, false))
 	}
 
 	static void loadData(script, max, procs, num, file, ignore_props=true) {
